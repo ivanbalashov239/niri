@@ -662,6 +662,12 @@ enum Op {
     ViewOffsetGestureEnd {
         is_touchpad: Option<bool>,
     },
+    SetWorkspaceViewOffset {
+        #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+        workspace_idx: Option<usize>,
+        #[proptest(strategy = "-1000.0..=1000.0f64")]
+        offset: f64,
+    },
     WorkspaceSwitchGestureBegin {
         #[proptest(strategy = "1..=5usize")]
         output_idx: usize,
@@ -1507,6 +1513,16 @@ impl Op {
             }
             Op::ViewOffsetGestureEnd { is_touchpad } => {
                 layout.view_offset_gesture_end(is_touchpad);
+            }
+            Op::SetWorkspaceViewOffset {
+                workspace_idx,
+                offset,
+            } => {
+                // Find the workspace reference based on workspace_idx
+                let workspace_ref = workspace_idx.map(|idx| {
+                    niri_config::WorkspaceReference::Index(idx as u8)
+                });
+                layout.set_workspace_view_offset(workspace_ref.as_ref(), offset);
             }
             Op::WorkspaceSwitchGestureBegin {
                 output_idx: id,

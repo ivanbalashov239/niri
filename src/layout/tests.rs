@@ -3680,6 +3680,50 @@ prop_compose! {
     }
 }
 
+#[test]
+fn set_workspace_view_offset_sets_offset() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        // Set view offset to 500.0
+        Op::SetWorkspaceViewOffset {
+            workspace_idx: None,
+            offset: 500.0,
+        },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn set_workspace_view_offset_with_workspace_reference() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusWorkspaceDown,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        // Set view offset on workspace 0 (not the active one)
+        Op::SetWorkspaceViewOffset {
+            workspace_idx: Some(0),
+            offset: 250.0,
+        },
+    ];
+
+    check_ops(ops);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: if std::env::var_os("RUN_SLOW_TESTS").is_none() {

@@ -4539,6 +4539,25 @@ impl<W: LayoutElement> Layout<W> {
         ws.set_view_offset(offset);
     }
 
+    /// Set the horizontal view offset of the active workspace on a specific monitor.
+    ///
+    /// This sets the view_offset field directly to the specified value as ViewOffset::Static(value)
+    /// for the workspace that is currently active on the specified monitor.
+    /// The offset is in logical pixels.
+    pub fn set_monitor_view_offset(&mut self, output: &Output, offset: f64) {
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            return;
+        };
+
+        let mon = monitors.iter_mut().find(|mon| &mon.output == output);
+        let Some(mon) = mon else {
+            return;
+        };
+
+        let ws = &mut mon.workspaces[mon.active_workspace_idx];
+        ws.set_view_offset(offset);
+    }
+
     pub fn set_monitors_overview_state(&mut self) {
         let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
             return;

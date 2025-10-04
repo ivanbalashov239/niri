@@ -252,6 +252,11 @@ pub enum Action {
         workspace: Option<WorkspaceReference>,
         offset: f64,
     },
+    #[knuffel(skip)]
+    SetMonitorViewOffset {
+        output: String,
+        offset: f64,
+    },
     FocusMonitorLeft,
     FocusMonitorRight,
     FocusMonitorDown,
@@ -523,6 +528,9 @@ impl From<niri_ipc::Action> for Action {
                 workspace: Some(WorkspaceReference::from(reference)),
                 offset,
             },
+            niri_ipc::Action::SetMonitorViewOffset { output, offset } => {
+                Self::SetMonitorViewOffset { output, offset }
+            }
             niri_ipc::Action::FocusMonitorLeft {} => Self::FocusMonitorLeft,
             niri_ipc::Action::FocusMonitorRight {} => Self::FocusMonitorRight,
             niri_ipc::Action::FocusMonitorDown {} => Self::FocusMonitorDown,

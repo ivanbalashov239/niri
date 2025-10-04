@@ -567,6 +567,25 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         reference: Option<WorkspaceReferenceArg>,
     },
+    /// Set the horizontal view offset of a workspace's ScrollingSpace.
+    ///
+    /// This sets the view_offset field directly to the specified value as ViewOffset::Static(value).
+    /// The offset is in logical pixels.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the horizontal view offset of a workspace")
+    )]
+    SetWorkspaceViewOffset {
+        /// Reference (id, index or name) of the workspace.
+        ///
+        /// If `None`, uses the focused workspace.
+        #[cfg_attr(feature = "clap", arg(long))]
+        workspace: Option<WorkspaceReferenceArg>,
+
+        /// The desired scroll position in logical pixels.
+        #[cfg_attr(feature = "clap", arg(long))]
+        offset: f64,
+    },
     /// Focus the monitor to the left.
     FocusMonitorLeft {},
     /// Focus the monitor to the right.

@@ -1760,6 +1760,13 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.view_offset_gesture_end(is_touchpad)
     }
 
+    /// Set the horizontal view offset of the workspace's ScrollingSpace directly.
+    ///
+    /// This sets the view_offset field to ViewOffset::Static(offset).
+    pub fn set_view_offset(&mut self, offset: f64) {
+        self.scrolling.set_view_offset(offset);
+    }
+
     pub fn dnd_scroll_gesture_begin(&mut self) {
         self.scrolling.dnd_scroll_gesture_begin();
     }

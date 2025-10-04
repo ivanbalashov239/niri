@@ -1400,6 +1400,12 @@ impl State {
             Action::UnsetWorkSpaceNameByRef(reference) => {
                 self.niri.layout.unset_workspace_name(Some(reference));
             }
+            Action::SetWorkspaceViewOffset { workspace, offset } => {
+                self.niri
+                    .layout
+                    .set_workspace_view_offset(workspace.as_ref(), offset);
+                self.niri.queue_redraw_all();
+            }
             Action::ConsumeWindowIntoColumn => {
                 self.niri.layout.consume_into_column();
                 // This does not cause immediate focus or window size change, so warping mouse to

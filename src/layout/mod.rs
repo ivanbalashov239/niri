@@ -4518,6 +4518,27 @@ impl<W: LayoutElement> Layout<W> {
         self.unname_workspace_by_id(id);
     }
 
+    /// Set the horizontal view offset of a workspace's ScrollingSpace.
+    ///
+    /// This sets the view_offset field directly to the specified value as ViewOffset::Static(value).
+    /// The offset is in logical pixels.
+    pub fn set_workspace_view_offset(
+        &mut self,
+        workspace: Option<&WorkspaceReference>,
+        offset: f64,
+    ) {
+        let ws = if let Some(reference) = workspace {
+            self.find_workspace_by_ref(*reference)
+        } else {
+            self.active_workspace_mut()
+        };
+        let Some(ws) = ws else {
+            return;
+        };
+
+        ws.set_view_offset(offset);
+    }
+
     pub fn set_monitors_overview_state(&mut self) {
         let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
             return;

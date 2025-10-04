@@ -3360,6 +3360,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
+    /// Set the horizontal view offset directly.
+    ///
+    /// This sets the view_offset field to ViewOffset::Static(offset).
+    pub fn set_view_offset(&mut self, offset: f64) {
+        self.view_offset = ViewOffset::Static(offset);
+    }
+
     pub fn dnd_scroll_gesture_end(&mut self) {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
             return;

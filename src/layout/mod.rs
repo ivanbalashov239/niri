@@ -2043,6 +2043,19 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_window_bottom();
     }
 
+    pub fn focus_monitor_right(&mut self) {
+        if let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        {
+            if !monitors.is_empty() {
+                *active_monitor_idx = (*active_monitor_idx + 1) % monitors.len();
+            }
+        }
+    }
+
     pub fn focus_window_down_or_top(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
@@ -4563,7 +4576,7 @@ impl<W: LayoutElement> Layout<W> {
         offset: f64,
     ) {
         let ws = if let Some(reference) = workspace {
-            self.find_workspace_by_ref(*reference)
+            self.find_workspace_by_ref(reference.clone())
         } else {
             self.active_workspace_mut()
         };

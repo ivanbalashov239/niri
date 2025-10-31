@@ -461,6 +461,7 @@ enum Op {
     FocusWindowOrMonitorDown(#[proptest(strategy = "1..=2u8")] u8),
     FocusColumnOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
     FocusColumnOrMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
+    FocusMonitorRight,
     FocusWindowDown,
     FocusWindowUp,
     FocusWindowDownOrColumnLeft,
@@ -1118,6 +1119,7 @@ impl Op {
 
                 layout.focus_column_right_or_output(&output);
             }
+            Op::FocusMonitorRight => layout.focus_monitor_right(),
             Op::FocusWindowDown => layout.focus_down(),
             Op::FocusWindowUp => layout.focus_up(),
             Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(),

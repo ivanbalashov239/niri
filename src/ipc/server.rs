@@ -17,7 +17,7 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
+    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, PointerPosition, Reply, Request, Response,
     WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
@@ -443,6 +443,27 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let result = rx.recv().await;
             let output = result.map_err(|_| String::from("error getting active output info"))?;
             Response::FocusedOutput(output)
+        }
+        Request::GetPointer => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let pointer = state.niri.seat.get_pointer().unwrap();
+                let location = pointer.current_location();
+                let output_name = state.niri.output_under_cursor()
+                    .map(|output| output.name())
+                    .unwrap_or_else(|| String::from("unknown"));
+                
+                let pointer_pos = niri_ipc::PointerPosition {
+                    x: location.x,
+                    y: location.y,
+                    output: output_name,
+                };
+                
+                let _ = tx.send_blocking(pointer_pos);
+            });
+            let result = rx.recv().await;
+            let pointer_pos = result.map_err(|_| String::from("error getting pointer position"))?;
+            Response::PointerPosition(pointer_pos)
         }
         Request::EventStream => Response::Handled,
         Request::OverviewState => {

@@ -8,7 +8,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview,
-    Request, Response, Transform, Window, WindowLayout,
+    PointerPosition, Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
@@ -45,6 +45,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
+        Msg::GetPointer => Request::GetPointer,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
@@ -315,6 +316,19 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             } else {
                 println!("No color was picked.");
             }
+        }
+        Msg::GetPointer => {
+            let Response::PointerPosition(pos) = response else {
+                bail!("unexpected response: expected PointerPosition, got {response:?}");
+            };
+
+            if json {
+                let pos = serde_json::to_string(&pos).context("error formatting response")?;
+                println!("{pos}");
+                return Ok(());
+            }
+
+            println!("Pointer position: x={}, y={}, output={}", pos.x, pos.y, pos.output);
         }
         Msg::Action { .. } => {
             let Response::Handled = response else {

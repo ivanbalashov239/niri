@@ -373,6 +373,12 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
+    SetPointer {
+        x: f64,
+        y: f64,
+        output: Option<String>,
+    },
+    #[knuffel(skip)]
     LoadConfigFile,
 }
 
@@ -697,6 +703,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
+            niri_ipc::Action::SetPointer { x, y, output } => Self::SetPointer { x, y, output },
             niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
         }
     }

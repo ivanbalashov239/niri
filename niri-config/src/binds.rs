@@ -258,6 +258,16 @@ pub enum Action {
     UnsetWorkspaceName,
     #[knuffel(skip)]
     UnsetWorkSpaceNameByRef(#[knuffel(argument)] WorkspaceReference),
+    #[knuffel(skip)]
+    SetWorkspaceViewOffset {
+        workspace: Option<WorkspaceReference>,
+        offset: f64,
+    },
+    #[knuffel(skip)]
+    SetMonitorViewOffset {
+        output: String,
+        offset: f64,
+    },
     FocusMonitorLeft,
     FocusMonitorRight,
     FocusMonitorDown,
@@ -527,6 +537,23 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::UnsetWorkspaceName {
                 reference: Some(reference),
             } => Self::UnsetWorkSpaceNameByRef(WorkspaceReference::from(reference)),
+            niri_ipc::Action::SetWorkspaceViewOffset {
+                workspace: None,
+                offset,
+            } => Self::SetWorkspaceViewOffset {
+                workspace: None,
+                offset,
+            },
+            niri_ipc::Action::SetWorkspaceViewOffset {
+                workspace: Some(reference),
+                offset,
+            } => Self::SetWorkspaceViewOffset {
+                workspace: Some(WorkspaceReference::from(reference)),
+                offset,
+            },
+            niri_ipc::Action::SetMonitorViewOffset { output, offset } => {
+                Self::SetMonitorViewOffset { output, offset }
+            }
             niri_ipc::Action::FocusMonitorLeft {} => Self::FocusMonitorLeft,
             niri_ipc::Action::FocusMonitorRight {} => Self::FocusMonitorRight,
             niri_ipc::Action::FocusMonitorDown {} => Self::FocusMonitorDown,

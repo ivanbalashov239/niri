@@ -660,6 +660,18 @@ enum Op {
     ViewOffsetGestureEnd {
         is_touchpad: Option<bool>,
     },
+    SetWorkspaceViewOffset {
+        #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+        workspace_idx: Option<usize>,
+        #[proptest(strategy = "-1000.0..=1000.0f64")]
+        offset: f64,
+    },
+    SetMonitorViewOffset {
+        #[proptest(strategy = "1..=5usize")]
+        output_idx: usize,
+        #[proptest(strategy = "-1000.0..=1000.0f64")]
+        offset: f64,
+    },
     WorkspaceSwitchGestureBegin {
         #[proptest(strategy = "1..=5usize")]
         output_idx: usize,
@@ -1515,6 +1527,26 @@ impl Op {
             }
             Op::ViewOffsetGestureEnd { is_touchpad } => {
                 layout.view_offset_gesture_end(is_touchpad);
+            }
+            Op::SetWorkspaceViewOffset {
+                workspace_idx,
+                offset,
+            } => {
+                // Find the workspace reference based on workspace_idx
+                let workspace_ref = workspace_idx.map(|idx| {
+                    niri_config::WorkspaceReference::Index(idx as u8)
+                });
+                layout.set_workspace_view_offset(workspace_ref.as_ref(), offset);
+            }
+            Op::SetMonitorViewOffset {
+                output_idx,
+                offset,
+            } => {
+                let name = format!("output{output_idx}");
+                let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
+                    return;
+                };
+                layout.set_monitor_view_offset(&output, offset);
             }
             Op::WorkspaceSwitchGestureBegin {
                 output_idx: id,
@@ -3785,6 +3817,100 @@ prop_compose! {
             ..Default::default()
         }
     }
+}
+
+#[test]
+fn set_workspace_view_offset_sets_offset() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        // Set view offset to 500.0
+        Op::SetWorkspaceViewOffset {
+            workspace_idx: None,
+            offset: 500.0,
+        },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn set_workspace_view_offset_with_workspace_reference() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusWorkspaceDown,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        // Set view offset on workspace 0 (not the active one)
+        Op::SetWorkspaceViewOffset {
+            workspace_idx: Some(0),
+            offset: 250.0,
+        },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn set_monitor_view_offset_sets_offset() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        // Set view offset on output 1
+        Op::SetMonitorViewOffset {
+            output_idx: 1,
+            offset: 750.0,
+        },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn set_monitor_view_offset_multiple_outputs() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddOutput(2),
+        Op::FocusMonitorRight,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        // Set view offset on output 2 (the active one)
+        Op::SetMonitorViewOffset {
+            output_idx: 2,
+            offset: 500.0,
+        },
+        // Set view offset on output 1 (not the active one)
+        Op::SetMonitorViewOffset {
+            output_idx: 1,
+            offset: 300.0,
+        },
+    ];
+
+    check_ops(ops);
 }
 
 proptest! {

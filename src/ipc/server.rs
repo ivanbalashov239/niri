@@ -17,7 +17,7 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, PointerPosition, Reply, Request, Response,
+    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
     WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;

@@ -22,7 +22,7 @@ use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
     GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
-    GrabStartData as PointerGrabStartData, MotionEvent, RelativeMotionEvent,
+    GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, RelativeMotionEvent,
 };
 use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
@@ -605,14 +605,17 @@ impl State {
                     self.niri.do_screen_transition(renderer, delay_ms);
                 });
             }
-            Action::ScreenshotScreen(write_to_disk, show_pointer) => {
+            Action::ScreenshotScreen(write_to_disk, show_pointer, path) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot(renderer, &active, write_to_disk, show_pointer)
-                        {
+                        if let Err(err) = self.niri.screenshot(
+                            renderer,
+                            &active,
+                            write_to_disk,
+                            show_pointer,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -636,32 +639,42 @@ impl State {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
-            Action::Screenshot(show_cursor) => {
-                self.open_screenshot_ui(show_cursor);
+            Action::Screenshot(show_cursor, path) => {
+                self.open_screenshot_ui(show_cursor, path);
             }
-            Action::ScreenshotWindow(write_to_disk) => {
+            Action::ScreenshotWindow(write_to_disk, path) => {
                 let focus = self.niri.layout.focus_with_output();
                 if let Some((mapped, output)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            output,
+                            mapped,
+                            write_to_disk,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
-            Action::ScreenshotWindowById { id, write_to_disk } => {
+            Action::ScreenshotWindowById {
+                id,
+                write_to_disk,
+                path,
+            } => {
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
                     let output = monitor.output();
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            output,
+                            mapped,
+                            write_to_disk,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -1526,6 +1539,23 @@ impl State {
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();
             }
+            Action::MaximizeWindowToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MaximizeWindowToEdgesById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::FocusMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.focus_output(&output);
@@ -2348,7 +2378,11 @@ impl State {
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner {
+            if !was_inside_hot_corner
+                && pointer
+                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                    .unwrap_or(true)
+            {
                 self.niri.layout.toggle_overview();
             }
             self.niri.pointer_inside_hot_corner = true;
@@ -2360,7 +2394,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
@@ -2430,7 +2464,11 @@ impl State {
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner {
+            if !was_inside_hot_corner
+                && pointer
+                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                    .unwrap_or(true)
+            {
                 self.niri.layout.toggle_overview();
             }
             self.niri.pointer_inside_hot_corner = true;
@@ -2447,7 +2485,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
@@ -3897,7 +3935,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         handle.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
@@ -3926,9 +3964,8 @@ impl State {
 
         if switch == Switch::Lid {
             let is_closed = evt.state() == SwitchState::On;
-            debug!("lid switch {}", if is_closed { "closed" } else { "opened" });
-            self.niri.is_lid_closed = is_closed;
-            self.backend.on_output_config_changed(&mut self.niri);
+            trace!("lid switch {}", if is_closed { "closed" } else { "opened" });
+            self.set_lid_closed(is_closed);
         }
 
         let action = {
@@ -4650,6 +4687,25 @@ pub fn mods_with_finger_scroll_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
             Trigger::TouchpadScrollRight,
         ],
     )
+}
+
+fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
+    let grab = grab.as_any();
+
+    // We lean on the blocklist approach here since it's not a terribly big deal if hot corner
+    // works where it shouldn't, but it could prevent some workflows if the hot corner doesn't work
+    // when it should.
+    //
+    // Some notable grabs not mentioned here:
+    // - DnDGrab allows hot corner to DnD across workspaces.
+    // - MoveGrab allows hot corner to DnD across workspaces.
+    // - ClickGrab keeps pointer focus on the window, so the hot corner doesn't trigger.
+    // - Touch grabs: touch doesn't trigger the hot corner.
+    if grab.is::<ResizeGrab>() || grab.is::<SpatialMovementGrab>() {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]

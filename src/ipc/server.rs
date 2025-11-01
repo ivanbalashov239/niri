@@ -449,13 +449,20 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             ctx.event_loop.insert_idle(move |state| {
                 let pointer = state.niri.seat.get_pointer().unwrap();
                 let location = pointer.current_location();
-                let output_name = state.niri.output_under_cursor()
-                    .map(|output| output.name())
-                    .unwrap_or_else(|| String::from("unknown"));
+                let (x, y, output_name) = if let Some(output) = state.niri.output_under_cursor() {
+                    let geo = state.niri.global_space.output_geometry(&output).unwrap();
+                    (
+                        location.x - geo.loc.x as f64,
+                        location.y - geo.loc.y as f64,
+                        output.name(),
+                    )
+                } else {
+                    (location.x, location.y, String::from("unknown"))
+                };
                 
                 let pointer_pos = niri_ipc::PointerPosition {
-                    x: location.x,
-                    y: location.y,
+                    x,
+                    y,
                     output: output_name,
                 };
                 

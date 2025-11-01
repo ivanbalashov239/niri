@@ -81,6 +81,8 @@ pub enum Msg {
     PickColor,
     /// Get the current pointer position.
     GetPointer,
+    /// Start streaming pointer position updates.
+    PointerStream,
     /// Perform an action.
     Action {
         #[command(subcommand)]

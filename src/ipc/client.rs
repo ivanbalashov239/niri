@@ -46,6 +46,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::GetPointer => Request::GetPointer,
+        Msg::PointerStream => Request::PointerStream,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
@@ -505,6 +506,28 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         println!("Screenshot captured: {description}");
                     }
                 }
+            }
+        }
+        Msg::PointerStream => {
+            let Response::Handled = response else {
+                bail!("unexpected response: expected Handled, got {response:?}");
+            };
+
+            if !json {
+                println!("Started reading pointer positions.");
+            }
+
+            let mut read_position = socket.read_pointer_positions();
+            loop {
+                let position = read_position().context("error reading pointer position from niri")?;
+
+                if json {
+                    let position = serde_json::to_string(&position).context("error formatting pointer position")?;
+                    println!("{position}");
+                    continue;
+                }
+
+                println!("Pointer position: x={:.1}, y={:.1}, output={}", position.x, position.y, position.output);
             }
         }
         Msg::OverviewState => {

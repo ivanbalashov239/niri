@@ -99,6 +99,14 @@ pub enum Request {
     },
     /// Request the current pointer position.
     GetPointer,
+    /// Start continuously receiving pointer position updates from the compositor.
+    ///
+    /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
+    /// pointer position updates as JSON-formatted [`PointerPosition`]s, one per line.
+    ///
+    /// Unlike [`EventStream`], this only sends pointer position changes, not the full compositor
+    /// state. The first message will be the current pointer position.
+    PointerStream,
     /// Start continuously receiving events from the compositor.
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send

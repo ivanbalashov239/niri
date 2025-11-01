@@ -48,6 +48,7 @@ pub struct IpcServer {
     pub socket_path: Option<PathBuf>,
     event_streams: Rc<RefCell<Vec<EventStreamSender>>>,
     event_stream_state: Rc<RefCell<EventStreamState>>,
+    pointer_streams: Rc<RefCell<Vec<PointerStreamSender>>>,
 }
 
 struct ClientCtx {
@@ -56,6 +57,7 @@ struct ClientCtx {
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
     event_streams: Rc<RefCell<Vec<EventStreamSender>>>,
     event_stream_state: Rc<RefCell<EventStreamState>>,
+    pointer_streams: Rc<RefCell<Vec<PointerStreamSender>>>,
 }
 
 struct EventStreamClient {
@@ -66,6 +68,17 @@ struct EventStreamClient {
 
 struct EventStreamSender {
     events: Sender<Event>,
+    disconnect: Sender<()>,
+}
+
+struct PointerStreamClient {
+    positions: Receiver<niri_ipc::PointerPosition>,
+    disconnect: Receiver<()>,
+    write: Box<dyn AsyncWrite + Unpin>,
+}
+
+struct PointerStreamSender {
+    positions: Sender<niri_ipc::PointerPosition>,
     disconnect: Sender<()>,
 }
 
@@ -109,6 +122,7 @@ impl IpcServer {
             socket_path,
             event_streams: Rc::new(RefCell::new(Vec::new())),
             event_stream_state: Rc::new(RefCell::new(EventStreamState::default())),
+            pointer_streams: Rc::new(RefCell::new(Vec::new())),
         })
     }
 
@@ -123,6 +137,29 @@ impl IpcServer {
                     warn!(
                         "disconnecting IPC event stream client \
                          because it is reading events too slowly"
+                    );
+                    to_remove.push(idx);
+                }
+            }
+        }
+
+        for idx in to_remove.into_iter().rev() {
+            let stream = streams.swap_remove(idx);
+            let _ = stream.disconnect.send_blocking(());
+        }
+    }
+
+    pub fn send_pointer_position(&self, position: niri_ipc::PointerPosition) {
+        let mut streams = self.pointer_streams.borrow_mut();
+        let mut to_remove = Vec::new();
+        for (idx, stream) in streams.iter_mut().enumerate() {
+            match stream.positions.try_send(position.clone()) {
+                Ok(()) => (),
+                Err(TrySendError::Closed(_)) => to_remove.push(idx),
+                Err(TrySendError::Full(_)) => {
+                    warn!(
+                        "disconnecting IPC pointer stream client \
+                         because it is reading positions too slowly"
                     );
                     to_remove.push(idx);
                 }
@@ -172,6 +209,7 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
         ipc_outputs: state.backend.ipc_outputs(),
         event_streams: ipc_server.event_streams.clone(),
         event_stream_state: ipc_server.event_stream_state.clone(),
+        pointer_streams: ipc_server.pointer_streams.clone(),
     };
 
     let future = async move {
@@ -207,6 +245,7 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
             .map_err(|err| err.to_string());
         let requested_error = matches!(request, Ok(Request::ReturnError));
         let requested_event_stream = matches!(request, Ok(Request::EventStream));
+        let requested_pointer_stream = matches!(request, Ok(Request::PointerStream));
 
         let reply = match request {
             Ok(request) => process(&ctx, request).await,
@@ -258,6 +297,69 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
                 let mut streams = ctx.event_streams.borrow_mut();
                 let sender = EventStreamSender {
                     events: events_tx,
+                    disconnect: disconnect_tx,
+                };
+                streams.push(sender);
+            }
+
+            return Ok(());
+        }
+
+        if requested_pointer_stream {
+            let (positions_tx, positions_rx) = async_channel::bounded(64);
+            let (disconnect_tx, disconnect_rx) = async_channel::bounded(1);
+
+            // Spawn a task for the client.
+            let client = PointerStreamClient {
+                positions: positions_rx,
+                disconnect: disconnect_rx,
+                write: Box::new(write) as _,
+            };
+            let future = async move {
+                if let Err(err) = handle_pointer_stream_client(client).await {
+                    warn!("error handling IPC pointer stream client: {err:?}");
+                }
+            };
+            if let Err(err) = ctx.scheduler.schedule(future) {
+                warn!("error scheduling IPC pointer stream future: {err:?}");
+            }
+
+            // Send the initial position.
+            {
+                let (tx, rx) = async_channel::bounded(1);
+                ctx.event_loop.insert_idle(move |state| {
+                    let pointer = state.niri.seat.get_pointer().unwrap();
+                    let location = pointer.current_location();
+                    let (x, y, output_name) = if let Some(output) = state.niri.output_under_cursor() {
+                        let geo = state.niri.global_space.output_geometry(&output).unwrap();
+                        (
+                            location.x - geo.loc.x as f64,
+                            location.y - geo.loc.y as f64,
+                            output.name(),
+                        )
+                    } else {
+                        (location.x, location.y, String::from("unknown"))
+                    };
+                    
+                    let pointer_pos = niri_ipc::PointerPosition {
+                        x,
+                        y,
+                        output: output_name,
+                    };
+                    
+                    let _ = tx.send_blocking(pointer_pos);
+                });
+                let pointer_pos = rx.recv().await.expect("initial pointer position");
+                positions_tx
+                    .try_send(pointer_pos)
+                    .expect("initial pointer position send failed");
+            }
+
+            // Add it to the list.
+            {
+                let mut streams = ctx.pointer_streams.borrow_mut();
+                let sender = PointerStreamSender {
+                    positions: positions_tx,
                     disconnect: disconnect_tx,
                 };
                 streams.push(sender);
@@ -472,6 +574,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let pointer_pos = result.map_err(|_| String::from("error getting pointer position"))?;
             Response::PointerPosition(pointer_pos)
         }
+        Request::PointerStream => Response::Handled,
         Request::EventStream => Response::Handled,
         Request::OverviewState => {
             let state = ctx.event_stream_state.borrow();
@@ -521,6 +624,33 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
             // Normal client disconnection.
             Err(err) if err.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
             res @ Err(_) => res.context("error writing event")?,
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_pointer_stream_client(client: PointerStreamClient) -> anyhow::Result<()> {
+    let PointerStreamClient {
+        positions,
+        disconnect,
+        mut write,
+    } = client;
+
+    while let Ok(position) = positions.recv().await {
+        let mut buf = serde_json::to_vec(&position).context("error formatting pointer position")?;
+        buf.push(b'\n');
+
+        let res = select_biased! {
+            _ = disconnect.recv().fuse() => return Ok(()),
+            res = write.write_all(&buf).fuse() => res,
+        };
+
+        match res {
+            Ok(()) => (),
+            // Normal client disconnection.
+            Err(err) if err.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
+            res @ Err(_) => res.context("error writing pointer position")?,
         }
     }
 

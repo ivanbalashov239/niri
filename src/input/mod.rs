@@ -2385,6 +2385,29 @@ impl State {
 
         pointer.frame(self);
 
+        // Send pointer position update to IPC clients
+        if let Some(ipc_server) = &self.niri.ipc_server {
+            let location = pointer.current_location();
+            let (x, y, output_name) = if let Some(output) = self.niri.output_under_cursor() {
+                let geo = self.niri.global_space.output_geometry(&output).unwrap();
+                (
+                    location.x - geo.loc.x as f64,
+                    location.y - geo.loc.y as f64,
+                    output.name(),
+                )
+            } else {
+                (location.x, location.y, String::from("unknown"))
+            };
+            
+            let pointer_pos = niri_ipc::PointerPosition {
+                x,
+                y,
+                output: output_name,
+            };
+            
+            ipc_server.send_pointer_position(pointer_pos);
+        }
+
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
@@ -2470,6 +2493,29 @@ impl State {
         );
 
         pointer.frame(self);
+
+        // Send pointer position update to IPC clients
+        if let Some(ipc_server) = &self.niri.ipc_server {
+            let location = pointer.current_location();
+            let (x, y, output_name) = if let Some(output) = self.niri.output_under_cursor() {
+                let geo = self.niri.global_space.output_geometry(&output).unwrap();
+                (
+                    location.x - geo.loc.x as f64,
+                    location.y - geo.loc.y as f64,
+                    output.name(),
+                )
+            } else {
+                (location.x, location.y, String::from("unknown"))
+            };
+            
+            let pointer_pos = niri_ipc::PointerPosition {
+                x,
+                y,
+                output: output_name,
+            };
+            
+            ipc_server.send_pointer_position(pointer_pos);
+        }
 
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.

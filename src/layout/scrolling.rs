@@ -117,7 +117,7 @@ pub(super) enum ViewOffset {
     Static(f64),
     /// The view offset is set by the user and should not be overridden by focus operations
     /// for a limited time.
-    User(f64),
+    User(Animation),
     /// The view offset is animating.
     Animation(Animation),
     /// The view offset is controlled by the ongoing gesture.
@@ -3517,7 +3517,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn set_view_offset_normalized(&mut self, position: f64) {
         let position = position.clamp(0.0, 1.0);
         let pixel_offset = self.compute_pixel_offset_from_normalized(position);
-        self.view_offset = ViewOffset::User(pixel_offset);
+        
+        let current_offset = self.view_offset.current();
+        let animation = Animation::new(
+            self.clock.clone(),
+            current_offset,
+            pixel_offset,
+            0.0,
+            self.options.animations.horizontal_view_movement.0,
+        );
+        
+        self.view_offset = ViewOffset::User(animation);
         self.user_offset_timestamp = Some(self.clock.now_unadjusted());
     }
 
@@ -3550,7 +3560,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     ///
     /// This sets the view_offset field to ViewOffset::User(offset).
     pub fn set_view_offset(&mut self, offset: f64) {
-        self.view_offset = ViewOffset::User(offset);
+        let animation = Animation::new(
+            self.clock.clone(),
+            offset,
+            offset,
+            0.0,
+            self.options.animations.horizontal_view_movement.0,
+        );
+        self.view_offset = ViewOffset::User(animation);
         self.user_offset_timestamp = Some(self.clock.now_unadjusted());
     }
 
@@ -3871,7 +3888,7 @@ impl ViewOffset {
     pub fn current(&self) -> f64 {
         match self {
             ViewOffset::Static(offset) => *offset,
-            ViewOffset::User(offset) => *offset,
+            ViewOffset::User(anim) => anim.value(),
             ViewOffset::Animation(anim) => anim.value(),
             ViewOffset::Gesture(gesture) => {
                 gesture.current_view_offset
@@ -3884,7 +3901,7 @@ impl ViewOffset {
     pub fn target(&self) -> f64 {
         match self {
             ViewOffset::Static(offset) => *offset,
-            ViewOffset::User(offset) => *offset,
+            ViewOffset::User(anim) => anim.to(),
             ViewOffset::Animation(anim) => anim.to(),
             // This can be used for example if a gesture is interrupted.
             ViewOffset::Gesture(gesture) => gesture.current_view_offset,
@@ -3897,7 +3914,7 @@ impl ViewOffset {
     fn stationary(&self) -> f64 {
         match self {
             ViewOffset::Static(offset) => *offset,
-            ViewOffset::User(offset) => *offset,
+            ViewOffset::User(anim) => anim.to(),
             // For animations we can return the final value.
             ViewOffset::Animation(anim) => anim.to(),
             ViewOffset::Gesture(gesture) => gesture.stationary_view_offset,
@@ -3905,7 +3922,7 @@ impl ViewOffset {
     }
 
     pub fn is_static(&self) -> bool {
-        matches!(self, Self::Static(_) | Self::User(_))
+        matches!(self, Self::Static(_))
     }
 
     pub fn is_gesture(&self) -> bool {
@@ -3919,7 +3936,7 @@ impl ViewOffset {
     pub fn is_animation_ongoing(&self) -> bool {
         match self {
             ViewOffset::Static(_) => false,
-            ViewOffset::User(_) => false,
+            ViewOffset::User(anim) => anim.value() != anim.to(),
             ViewOffset::Animation(_) => true,
             ViewOffset::Gesture(gesture) => gesture.animation.is_some(),
         }
@@ -3928,7 +3945,7 @@ impl ViewOffset {
     pub fn offset(&mut self, delta: f64) {
         match self {
             ViewOffset::Static(offset) => *offset += delta,
-            ViewOffset::User(offset) => *offset += delta,
+            ViewOffset::User(anim) => anim.offset(delta),
             ViewOffset::Animation(anim) => anim.offset(delta),
             ViewOffset::Gesture(gesture) => {
                 gesture.stationary_view_offset += delta;

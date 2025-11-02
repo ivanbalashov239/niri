@@ -3940,9 +3940,10 @@ fn set_workspace_view_offset_persists_on_focus() {
 
     let layout = check_ops(ops);
 
-    // Check that the view offset is still 0.0
+    // Check that the view offset target is still 0.0 (User offsets persist)
     let workspace = layout.active_workspace().unwrap();
-    assert_eq!(workspace.scrolling().current_view_offset(), 0.0);
+    let view_offset = workspace.scrolling().view_offset();
+    assert_eq!(view_offset.target(), 0.0);
 }
 
 proptest! {

@@ -10,7 +10,7 @@ use niri_config::{
     Action, Bind, Binds, BoundAction, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds,
     Trigger,
 };
-use niri_ipc::LayoutSwitchTarget;
+use niri_ipc::{LayoutSwitchTarget, PointerEvent};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -3034,8 +3034,7 @@ impl State {
                 y,
                 output: output_name,
             };
-            
-            ipc_server.send_pointer_position(pointer_pos);
+            ipc_server.send_pointer_event(PointerEvent::Position(pointer_pos));
         }
 
         // contents_under() will return no surface when the hot corner should trigger, so
@@ -3148,8 +3147,7 @@ impl State {
                 y,
                 output: output_name,
             };
-            
-            ipc_server.send_pointer_position(pointer_pos);
+            ipc_server.send_pointer_event(PointerEvent::Position(pointer_pos));
         }
 
         // contents_under() will return no surface when the hot corner should trigger, so
@@ -3559,6 +3557,14 @@ impl State {
             },
         );
         pointer.frame(self);
+
+        // Send pointer button event to IPC clients
+        if let Some(ipc_server) = &self.niri.ipc_server {
+            ipc_server.send_pointer_event(PointerEvent::Button {
+                button: button_code,
+                pressed: button_state == ButtonState::Pressed,
+            });
+        }
     }
 
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {

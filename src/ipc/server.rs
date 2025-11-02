@@ -72,13 +72,13 @@ struct EventStreamSender {
 }
 
 struct PointerStreamClient {
-    positions: Receiver<niri_ipc::PointerPosition>,
+    events: Receiver<niri_ipc::PointerEvent>,
     disconnect: Receiver<()>,
     write: Box<dyn AsyncWrite + Unpin>,
 }
 
 struct PointerStreamSender {
-    positions: Sender<niri_ipc::PointerPosition>,
+    events: Sender<niri_ipc::PointerEvent>,
     disconnect: Sender<()>,
 }
 
@@ -149,17 +149,17 @@ impl IpcServer {
         }
     }
 
-    pub fn send_pointer_position(&self, position: niri_ipc::PointerPosition) {
+    pub fn send_pointer_event(&self, event: niri_ipc::PointerEvent) {
         let mut streams = self.pointer_streams.borrow_mut();
         let mut to_remove = Vec::new();
         for (idx, stream) in streams.iter_mut().enumerate() {
-            match stream.positions.try_send(position.clone()) {
+            match stream.events.try_send(event.clone()) {
                 Ok(()) => (),
                 Err(TrySendError::Closed(_)) => to_remove.push(idx),
                 Err(TrySendError::Full(_)) => {
                     warn!(
                         "disconnecting IPC pointer stream client \
-                         because it is reading positions too slowly"
+                         because it is reading events too slowly"
                     );
                     to_remove.push(idx);
                 }
@@ -306,12 +306,12 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
         }
 
         if requested_pointer_stream {
-            let (positions_tx, positions_rx) = async_channel::bounded(64);
+            let (events_tx, events_rx) = async_channel::bounded(64);
             let (disconnect_tx, disconnect_rx) = async_channel::bounded(1);
 
             // Spawn a task for the client.
             let client = PointerStreamClient {
-                positions: positions_rx,
+                events: events_rx,
                 disconnect: disconnect_rx,
                 write: Box::new(write) as _,
             };
@@ -350,16 +350,16 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
                     let _ = tx.send_blocking(pointer_pos);
                 });
                 let pointer_pos = rx.recv().await.expect("initial pointer position");
-                positions_tx
-                    .try_send(pointer_pos)
-                    .expect("initial pointer position send failed");
+                events_tx
+                    .try_send(niri_ipc::PointerEvent::Position(pointer_pos))
+                    .expect("initial pointer event send failed");
             }
 
             // Add it to the list.
             {
                 let mut streams = ctx.pointer_streams.borrow_mut();
                 let sender = PointerStreamSender {
-                    positions: positions_tx,
+                    events: events_tx,
                     disconnect: disconnect_tx,
                 };
                 streams.push(sender);
@@ -632,13 +632,13 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
 
 async fn handle_pointer_stream_client(client: PointerStreamClient) -> anyhow::Result<()> {
     let PointerStreamClient {
-        positions,
+        events,
         disconnect,
         mut write,
     } = client;
 
-    while let Ok(position) = positions.recv().await {
-        let mut buf = serde_json::to_vec(&position).context("error formatting pointer position")?;
+    while let Ok(event) = events.recv().await {
+        let mut buf = serde_json::to_vec(&event).context("error formatting pointer event")?;
         buf.push(b'\n');
 
         let res = select_biased! {
@@ -650,7 +650,7 @@ async fn handle_pointer_stream_client(client: PointerStreamClient) -> anyhow::Re
             Ok(()) => (),
             // Normal client disconnection.
             Err(err) if err.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
-            res @ Err(_) => res.context("error writing pointer position")?,
+            res @ Err(_) => res.context("error writing pointer event")?,
         }
     }
 

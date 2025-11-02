@@ -102,7 +102,7 @@ pub enum Request {
     /// Start continuously receiving pointer position updates from the compositor.
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
-    /// pointer position updates as JSON-formatted [`PointerPosition`]s, one per line.
+    /// pointer position updates as JSON-formatted [`PointerEvent`]s, one per line.
     ///
     /// Unlike [`EventStream`], this only sends pointer position changes, not the full compositor
     /// state. The first message will be the current pointer position.
@@ -200,6 +200,21 @@ pub struct PointerPosition {
     pub y: f64,
     /// Name of the output the pointer is on.
     pub output: String,
+}
+
+/// Pointer event information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PointerEvent {
+    /// Pointer moved to a new position.
+    Position(PointerPosition),
+    /// Pointer button was pressed or released.
+    Button {
+        /// Button code.
+        button: u32,
+        /// Whether the button was pressed (true) or released (false).
+        pressed: bool,
+    },
 }
 
 /// Actions that niri can perform.

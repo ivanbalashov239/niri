@@ -1355,6 +1355,7 @@ mod tests {
                     b: 0.25,
                     a: 1.0,
                 },
+                user_offset_timeout_ms: 5000,
             },
             prefer_no_csd: true,
             cursor: Cursor {

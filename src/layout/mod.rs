@@ -4566,14 +4566,15 @@ impl<W: LayoutElement> Layout<W> {
         self.unname_workspace_by_id(id);
     }
 
-    /// Set the horizontal view offset of a workspace's ScrollingSpace.
+    /// Set the horizontal view offset of a workspace from a normalized position.
     ///
-    /// This sets the view_offset field directly to the specified value as ViewOffset::Static(value).
-    /// The offset is in logical pixels.
+    /// The position is a value from 0.0 to 1.0, where:
+    /// - 0.0 positions the leftmost edge of the first column at the left edge of the viewport
+    /// - 1.0 positions the rightmost edge of the last column at the right edge of the viewport
     pub fn set_workspace_view_offset(
         &mut self,
         workspace: Option<&WorkspaceReference>,
-        offset: f64,
+        position: f64,
     ) {
         let ws = if let Some(reference) = workspace {
             self.find_workspace_by_ref(reference.clone())
@@ -4584,15 +4585,15 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
 
-        ws.set_view_offset(offset);
+        ws.set_view_offset_normalized(position);
     }
 
-    /// Set the horizontal view offset of the active workspace on a specific monitor.
+    /// Set the horizontal view offset of the active workspace on a specific monitor from a normalized position.
     ///
-    /// This sets the view_offset field directly to the specified value as ViewOffset::Static(value)
-    /// for the workspace that is currently active on the specified monitor.
-    /// The offset is in logical pixels.
-    pub fn set_monitor_view_offset(&mut self, output: &Output, offset: f64) {
+    /// The position is a value from 0.0 to 1.0, where:
+    /// - 0.0 positions the leftmost edge of the first column at the left edge of the viewport
+    /// - 1.0 positions the rightmost edge of the last column at the right edge of the viewport
+    pub fn set_monitor_view_offset(&mut self, output: &Output, position: f64) {
         let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
             return;
         };
@@ -4603,7 +4604,7 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         let ws = &mut mon.workspaces[mon.active_workspace_idx];
-        ws.set_view_offset(offset);
+        ws.set_view_offset_normalized(position);
     }
 
     pub fn set_monitors_overview_state(&mut self) {

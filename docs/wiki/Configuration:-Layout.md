@@ -12,6 +12,7 @@ layout {
     empty-workspace-above-first
     default-column-display "tabbed"
     background-color "#003300"
+    user-offset-timeout-ms 5000
 
     preset-column-widths {
         proportion 0.33333
@@ -559,3 +560,19 @@ layout {
 ```
 
 You can also set the color per-output [in the output config](./Configuration:-Outputs.md#layout-config-overrides).
+
+### `user-offset-timeout-ms`
+
+<sup>Since: next release</sup>
+
+Set the timeout in milliseconds for how long user-set view offsets (via IPC commands like `set-workspace-view-offset` and `set-monitor-view-offset`) persist before automatic focus operations can override them.
+
+The default is 5000 milliseconds (5 seconds).
+
+```kdl
+layout {
+    user-offset-timeout-ms 10000  // 10 seconds
+}
+```
+
+This prevents automatic view adjustments (like centering focused columns) from interfering with manually positioned views for the specified duration.

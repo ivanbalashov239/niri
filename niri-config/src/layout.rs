@@ -24,6 +24,7 @@ pub struct Layout {
     pub gaps: f64,
     pub struts: Struts,
     pub background_color: Color,
+    pub user_offset_timeout_ms: u32,
 }
 
 impl Default for Layout {
@@ -52,6 +53,7 @@ impl Default for Layout {
                 PresetSize::Proportion(2. / 3.),
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
+            user_offset_timeout_ms: 5000, // 5 seconds
         }
     }
 }
@@ -79,6 +81,10 @@ impl MergeWith<LayoutPart> for Layout {
             struts,
             background_color,
         );
+
+        if let Some(x) = part.user_offset_timeout_ms {
+            self.user_offset_timeout_ms = x;
+        }
 
         if let Some(x) = part.default_column_width {
             self.default_column_width = x.0;
@@ -126,6 +132,8 @@ pub struct LayoutPart {
     pub struts: Option<Struts>,
     #[knuffel(child)]
     pub background_color: Option<Color>,
+    #[knuffel(child, unwrap(argument))]
+    pub user_offset_timeout_ms: Option<u32>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

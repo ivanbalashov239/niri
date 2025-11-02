@@ -8,7 +8,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview,
-    Request, Response, Transform, Window, WindowLayout,
+    PointerEvent, Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
@@ -514,20 +514,27 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             };
 
             if !json {
-                println!("Started reading pointer positions.");
+                println!("Started reading pointer events.");
             }
 
-            let mut read_position = socket.read_pointer_positions();
+            let mut read_event = socket.read_pointer_events();
             loop {
-                let position = read_position().context("error reading pointer position from niri")?;
+                let event = read_event().context("error reading pointer event from niri")?;
 
                 if json {
-                    let position = serde_json::to_string(&position).context("error formatting pointer position")?;
-                    println!("{position}");
+                    let event = serde_json::to_string(&event).context("error formatting pointer event")?;
+                    println!("{event}");
                     continue;
                 }
 
-                println!("Pointer position: x={:.1}, y={:.1}, output={}", position.x, position.y, position.output);
+                match event {
+                    PointerEvent::Position(pos) => {
+                        println!("Pointer position: x={:.1}, y={:.1}, output={}", pos.x, pos.y, pos.output);
+                    }
+                    PointerEvent::Button { button, pressed } => {
+                        println!("Pointer button: button={}, pressed={}", button, pressed);
+                    }
+                }
             }
         }
         Msg::OverviewState => {

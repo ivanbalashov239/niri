@@ -1877,6 +1877,14 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.set_view_offset(offset);
     }
 
+    /// Set the horizontal view offset from a normalized position (0.0 to 1.0).
+    ///
+    /// 0.0 positions the leftmost edge of the first column at the left edge of the viewport.
+    /// 1.0 positions the rightmost edge of the last column at the right edge of the viewport.
+    pub fn set_view_offset_normalized(&mut self, position: f64) {
+        self.scrolling.set_view_offset_normalized(position);
+    }
+
     pub fn dnd_scroll_gesture_begin(&mut self) {
         self.scrolling.dnd_scroll_gesture_begin();
     }

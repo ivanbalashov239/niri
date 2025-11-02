@@ -91,6 +91,9 @@ pub struct ScrollingSpace<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
+
+    /// Timestamp of the last user-set view offset, to prevent automatic adjustments.
+    user_offset_timestamp: Option<Duration>,
 }
 
 niri_render_elements! {
@@ -112,6 +115,9 @@ struct ColumnData {
 pub(super) enum ViewOffset {
     /// The view offset is static.
     Static(f64),
+    /// The view offset is set by the user and should not be overridden by focus operations
+    /// for a limited time.
+    User(Animation),
     /// The view offset is animating.
     Animation(Animation),
     /// The view offset is controlled by the ongoing gesture.
@@ -306,6 +312,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             scale,
             clock,
             options,
+            user_offset_timestamp: None,
         }
     }
 
@@ -330,7 +337,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.options = options;
 
         // Apply always-center and such right away.
-        if !self.columns.is_empty() && !self.view_offset.is_gesture() {
+        let timeout = Duration::from_millis(self.options.layout.user_offset_timeout_ms as u64);
+        if !self.columns.is_empty() && !self.view_offset.is_gesture() && !self.has_recent_user_offset(timeout) {
             self.animate_view_offset_to_column(None, self.active_column_idx, None);
         }
     }
@@ -777,6 +785,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // During a DnD scroll, animate even when activating the same window, for DnD hold.
             && (self.columns.is_empty() || !self.view_offset.is_dnd_scroll())
         {
+            return;
+        }
+
+        // Don't adjust view offset for recent user-set offsets.
+        let timeout = Duration::from_millis(self.options.layout.user_offset_timeout_ms as u64);
+        if self.has_recent_user_offset(timeout) {
+            // Just update the active column index without animating the view.
+            if self.active_column_idx != idx {
+                self.active_column_idx = idx;
+                // A different column was activated; reset the flag.
+                self.activate_prev_column_on_removal = None;
+                self.view_offset_to_restore = None;
+                self.interactive_resize = None;
+            }
             return;
         }
 
@@ -1383,7 +1405,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             // We might need to move the view to ensure the resized window is still visible. But
             // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            let timeout = Duration::from_millis(self.options.layout.user_offset_timeout_ms as u64);
+            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() && !self.has_recent_user_offset(timeout) {
                 // Restore the view offset upon unfullscreening if needed.
                 if let Some(prev_offset) = unfullscreen_offset {
                     self.animate_view_offset(col_idx, prev_offset);
@@ -3485,11 +3508,72 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
+    /// Set the horizontal view offset from a normalized position (0.0 to 1.0).
+    ///
+    /// 0.0 positions the leftmost edge of the first column at the left edge of the viewport.
+    /// 1.0 positions the rightmost edge of the last column at the right edge of the viewport.
+    ///
+    /// This sets the view_offset field to ViewOffset::User(pixel_offset).
+    pub fn set_view_offset_normalized(&mut self, position: f64) {
+        let position = position.clamp(0.0, 1.0);
+        let pixel_offset = self.compute_pixel_offset_from_normalized(position);
+        
+        let current_offset = self.view_offset.current();
+        let animation = Animation::new(
+            self.clock.clone(),
+            current_offset,
+            pixel_offset,
+            0.0,
+            self.options.animations.horizontal_view_movement.0,
+        );
+        
+        self.view_offset = ViewOffset::User(animation);
+        self.user_offset_timestamp = Some(self.clock.now_unadjusted());
+    }
+
+    fn compute_pixel_offset_from_normalized(&self, position: f64) -> f64 {
+        if self.columns.is_empty() {
+            return 0.0;
+        }
+
+        // The total width from left of first column to right of last column
+        let left_edge_first = self.column_x(0);
+        let right_edge_last = self.column_x(self.columns.len() - 1) + self.columns.last().unwrap().width();
+        let total_content_width = right_edge_last - left_edge_first;
+
+        let viewport_width = self.working_area.size.w;
+
+        if total_content_width <= viewport_width {
+            return 0.0;
+        }
+
+        // Target view position for the given normalized position
+        let target_view_pos = position.clamp(0.0, 1.0) * (total_content_width - viewport_width);
+
+        // Current view position is column_x(active) + view_offset
+        // We want it to be target_view_pos, so view_offset = target_view_pos - column_x(active)
+        let active_col_x = self.column_x(self.active_column_idx);
+        target_view_pos - active_col_x
+    }
+
     /// Set the horizontal view offset directly.
     ///
-    /// This sets the view_offset field to ViewOffset::Static(offset).
+    /// This sets the view_offset field to ViewOffset::User(offset).
     pub fn set_view_offset(&mut self, offset: f64) {
-        self.view_offset = ViewOffset::Static(offset);
+        let animation = Animation::new(
+            self.clock.clone(),
+            offset,
+            offset,
+            0.0,
+            self.options.animations.horizontal_view_movement.0,
+        );
+        self.view_offset = ViewOffset::User(animation);
+        self.user_offset_timestamp = Some(self.clock.now_unadjusted());
+    }
+
+    /// Get the current view offset value.
+    pub fn current_view_offset(&self) -> f64 {
+        self.view_offset.current()
     }
 
     pub fn dnd_scroll_gesture_end(&mut self) {
@@ -3741,6 +3825,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         &self.view_offset
     }
 
+    fn has_recent_user_offset(&self, timeout: Duration) -> bool {
+        self.user_offset_timestamp
+            .map(|timestamp| {
+                let now = self.clock.now_unadjusted();
+                now.saturating_sub(timestamp) < timeout
+            })
+            .unwrap_or(false)
+    }
+
     #[cfg(test)]
     pub fn verify_invariants(&self) {
         assert!(self.view_size.w > 0.);
@@ -3795,6 +3888,7 @@ impl ViewOffset {
     pub fn current(&self) -> f64 {
         match self {
             ViewOffset::Static(offset) => *offset,
+            ViewOffset::User(anim) => anim.value(),
             ViewOffset::Animation(anim) => anim.value(),
             ViewOffset::Gesture(gesture) => {
                 gesture.current_view_offset
@@ -3807,6 +3901,7 @@ impl ViewOffset {
     pub fn target(&self) -> f64 {
         match self {
             ViewOffset::Static(offset) => *offset,
+            ViewOffset::User(anim) => anim.to(),
             ViewOffset::Animation(anim) => anim.to(),
             // This can be used for example if a gesture is interrupted.
             ViewOffset::Gesture(gesture) => gesture.current_view_offset,
@@ -3819,6 +3914,7 @@ impl ViewOffset {
     fn stationary(&self) -> f64 {
         match self {
             ViewOffset::Static(offset) => *offset,
+            ViewOffset::User(anim) => anim.to(),
             // For animations we can return the final value.
             ViewOffset::Animation(anim) => anim.to(),
             ViewOffset::Gesture(gesture) => gesture.stationary_view_offset,
@@ -3840,6 +3936,7 @@ impl ViewOffset {
     pub fn is_animation_ongoing(&self) -> bool {
         match self {
             ViewOffset::Static(_) => false,
+            ViewOffset::User(anim) => anim.value() != anim.to(),
             ViewOffset::Animation(_) => true,
             ViewOffset::Gesture(gesture) => gesture.animation.is_some(),
         }
@@ -3848,6 +3945,7 @@ impl ViewOffset {
     pub fn offset(&mut self, delta: f64) {
         match self {
             ViewOffset::Static(offset) => *offset += delta,
+            ViewOffset::User(anim) => anim.offset(delta),
             ViewOffset::Animation(anim) => anim.offset(delta),
             ViewOffset::Gesture(gesture) => {
                 gesture.stationary_view_offset += delta;

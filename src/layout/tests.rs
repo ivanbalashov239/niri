@@ -3915,6 +3915,37 @@ fn set_monitor_view_offset_multiple_outputs() {
     check_ops(ops);
 }
 
+#[test]
+fn set_workspace_view_offset_persists_on_focus() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        // Set view offset to 0.0 (leftmost)
+        Op::SetWorkspaceViewOffset {
+            workspace_idx: None,
+            offset: 0.0,
+        },
+        // Focus right, which should not change the view offset
+        Op::FocusColumnOrMonitorRight(1),
+        // The offset should still be 500.0
+    ];
+
+    let layout = check_ops(ops);
+
+    // Check that the view offset target is still 0.0 (User offsets persist)
+    let workspace = layout.active_workspace().unwrap();
+    let view_offset = workspace.scrolling().view_offset();
+    assert_eq!(view_offset.target(), 0.0);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: if std::env::var_os("RUN_SLOW_TESTS").is_none() {

@@ -2194,6 +2194,11 @@ impl State {
                         return;
                     }
                 };
+                
+                // Get the contents under the new location to handle focus-follows-mouse
+                let under = self.niri.contents_under(location);
+                self.niri.handle_focus_follows_mouse(&under);
+                
                 self.move_cursor(location);
             }
             Action::LoadConfigFile => {

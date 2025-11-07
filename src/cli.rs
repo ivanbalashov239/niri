@@ -79,6 +79,10 @@ pub enum Msg {
     PickWindow,
     /// Pick a color from the screen with the mouse.
     PickColor,
+    /// Get the current pointer position.
+    GetPointer,
+    /// Start streaming pointer position updates.
+    PointerStream,
     /// Perform an action.
     Action {
         #[command(subcommand)]

@@ -6,7 +6,7 @@ use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 
-use crate::{Event, Reply, Request};
+use crate::{Event, PointerEvent, Reply, Request};
 
 /// Name of the environment variable containing the niri IPC socket path.
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
@@ -87,6 +87,41 @@ impl Socket {
     /// }
     /// ```
     pub fn read_events(self) -> impl FnMut() -> io::Result<Event> {
+        let Self { mut stream } = self;
+        let _ = stream.get_mut().shutdown(Shutdown::Write);
+
+        let mut buf = String::new();
+        move || {
+            buf.clear();
+            stream.read_line(&mut buf)?;
+            let event = serde_json::from_str(&buf)?;
+            Ok(event)
+        }
+    }
+
+    /// Read pointer events from the socket.
+    ///
+    /// This method should be called after sending a [`Request::PointerStream`].
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use niri_ipc::socket::Socket;
+    ///
+    /// let socket = Socket::connect()?;
+    /// socket.send(Request::PointerStream)?;
+    /// let response = socket.recv()?;
+    ///
+    /// if let Response::Handled = response {
+    ///     let mut read_event = socket.read_pointer_events();
+    ///     while let Ok(event) = read_event() {
+    ///         println!("Received pointer event: {event:?}");
+    ///     }
+    /// }
+    ///
+    /// Ok(())
+    /// ```
+    pub fn read_pointer_events(self) -> impl FnMut() -> io::Result<PointerEvent> {
         let Self { mut stream } = self;
         let _ = stream.get_mut().shutdown(Shutdown::Write);
 

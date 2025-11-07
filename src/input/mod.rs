@@ -7,7 +7,7 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
-use niri_ipc::LayoutSwitchTarget;
+use niri_ipc::{LayoutSwitchTarget, PointerEvent};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -2174,6 +2174,33 @@ impl State {
                 }
                 self.niri.queue_redraw_all();
             }
+            Action::SetPointer { x, y, output } => {
+                let location = if let Some(output_name) = output {
+                    // Find the specified output
+                    if let Some(output) = self.niri.global_space.outputs().find(|o| o.name() == output_name) {
+                        let geo = self.niri.global_space.output_geometry(output).unwrap();
+                        Point::from((geo.loc.x as f64 + x, geo.loc.y as f64 + y))
+                    } else {
+                        warn!("Output '{}' not found for SetPointer action", output_name);
+                        return;
+                    }
+                } else {
+                    // Use current output
+                    if let Some(output) = self.niri.output_under_cursor() {
+                        let geo = self.niri.global_space.output_geometry(&output).unwrap();
+                        Point::from((geo.loc.x as f64 + x, geo.loc.y as f64 + y))
+                    } else {
+                        warn!("No output found for SetPointer action");
+                        return;
+                    }
+                };
+                
+                // Get the contents under the new location to handle focus-follows-mouse
+                let under = self.niri.contents_under(location);
+                self.niri.handle_focus_follows_mouse(&under);
+                
+                self.move_cursor(location);
+            }
             Action::LoadConfigFile => {
                 if let Some(watcher) = &self.niri.config_file_watcher {
                     watcher.load_config();
@@ -2363,6 +2390,29 @@ impl State {
 
         pointer.frame(self);
 
+        // Send pointer position update to IPC clients
+        if let Some(ipc_server) = &self.niri.ipc_server {
+            let location = pointer.current_location();
+            let (x, y, output_name) = if let Some(output) = self.niri.output_under_cursor() {
+                let geo = self.niri.global_space.output_geometry(&output).unwrap();
+                (
+                    location.x - geo.loc.x as f64,
+                    location.y - geo.loc.y as f64,
+                    output.name(),
+                )
+            } else {
+                (location.x, location.y, String::from("unknown"))
+            };
+            
+            let pointer_pos = niri_ipc::PointerPosition {
+                x,
+                y,
+                output: output_name,
+            };
+            
+            ipc_server.send_pointer_event(PointerEvent::Position(pointer_pos));
+        }
+
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
@@ -2448,6 +2498,29 @@ impl State {
         );
 
         pointer.frame(self);
+
+        // Send pointer position update to IPC clients
+        if let Some(ipc_server) = &self.niri.ipc_server {
+            let location = pointer.current_location();
+            let (x, y, output_name) = if let Some(output) = self.niri.output_under_cursor() {
+                let geo = self.niri.global_space.output_geometry(&output).unwrap();
+                (
+                    location.x - geo.loc.x as f64,
+                    location.y - geo.loc.y as f64,
+                    output.name(),
+                )
+            } else {
+                (location.x, location.y, String::from("unknown"))
+            };
+            
+            let pointer_pos = niri_ipc::PointerPosition {
+                x,
+                y,
+                output: output_name,
+            };
+            
+            ipc_server.send_pointer_event(PointerEvent::Position(pointer_pos));
+        }
 
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
@@ -2782,6 +2855,14 @@ impl State {
             },
         );
         pointer.frame(self);
+
+        // Send pointer button event to IPC clients
+        if let Some(ipc_server) = &self.niri.ipc_server {
+            ipc_server.send_pointer_event(PointerEvent::Button {
+                button: button_code,
+                pressed: button_state == ButtonState::Pressed,
+            });
+        }
     }
 
     fn on_pointer_axis<I: InputBackend>(&mut self, event: I::PointerAxisEvent) {

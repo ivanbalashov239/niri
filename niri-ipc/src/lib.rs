@@ -97,6 +97,16 @@ pub enum Request {
         /// Configuration to apply.
         action: OutputAction,
     },
+    /// Request the current pointer position.
+    GetPointer,
+    /// Start continuously receiving pointer position updates from the compositor.
+    ///
+    /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
+    /// pointer position updates as JSON-formatted [`PointerEvent`]s, one per line.
+    ///
+    /// Unlike [`EventStream`], this only sends pointer position changes, not the full compositor
+    /// state. The first message will be the current pointer position.
+    PointerStream,
     /// Start continuously receiving events from the compositor.
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
@@ -158,6 +168,8 @@ pub enum Response {
     PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+    /// Information about the current pointer position.
+    PointerPosition(PointerPosition),
     /// Information about the overview.
     OverviewState(Overview),
 }
@@ -176,6 +188,33 @@ pub struct Overview {
 pub struct PickedColor {
     /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
     pub rgb: [f64; 3],
+}
+
+/// Pointer position information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PointerPosition {
+    /// X coordinate of the pointer.
+    pub x: f64,
+    /// Y coordinate of the pointer.
+    pub y: f64,
+    /// Name of the output the pointer is on.
+    pub output: String,
+}
+
+/// Pointer event information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum PointerEvent {
+    /// Pointer moved to a new position.
+    Position(PointerPosition),
+    /// Pointer button was pressed or released.
+    Button {
+        /// Button code.
+        button: u32,
+        /// Whether the button was pressed (true) or released (false).
+        pressed: bool,
+    },
 }
 
 /// Actions that niri can perform.
@@ -909,6 +948,21 @@ pub enum Action {
         /// Id of the window to unset urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
+    },
+    /// Set the pointer position.
+    #[cfg_attr(feature = "clap", clap(about = "Set the pointer position"))]
+    SetPointer {
+        /// X coordinate to set the pointer to.
+        #[cfg_attr(feature = "clap", arg())]
+        x: f64,
+        /// Y coordinate to set the pointer to.
+        #[cfg_attr(feature = "clap", arg())]
+        y: f64,
+        /// Name of the output to set the pointer on.
+        ///
+        /// If `None`, uses the currently focused output.
+        #[cfg_attr(feature = "clap", arg(long))]
+        output: Option<String>,
     },
     /// Reload the config file.
     ///

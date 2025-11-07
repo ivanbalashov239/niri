@@ -8,7 +8,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Action, Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview,
-    Request, Response, Transform, Window, WindowLayout,
+    PointerEvent, Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
@@ -45,6 +45,8 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
+        Msg::GetPointer => Request::GetPointer,
+        Msg::PointerStream => Request::PointerStream,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
@@ -316,6 +318,19 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("No color was picked.");
             }
         }
+        Msg::GetPointer => {
+            let Response::PointerPosition(pos) = response else {
+                bail!("unexpected response: expected PointerPosition, got {response:?}");
+            };
+
+            if json {
+                let pos = serde_json::to_string(&pos).context("error formatting response")?;
+                println!("{pos}");
+                return Ok(());
+            }
+
+            println!("Pointer position: x={}, y={}, output={}", pos.x, pos.y, pos.output);
+        }
         Msg::Action { .. } => {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
@@ -489,6 +504,35 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         }
                         let description = parts.join(" and ");
                         println!("Screenshot captured: {description}");
+                    }
+                }
+            }
+        }
+        Msg::PointerStream => {
+            let Response::Handled = response else {
+                bail!("unexpected response: expected Handled, got {response:?}");
+            };
+
+            if !json {
+                println!("Started reading pointer events.");
+            }
+
+            let mut read_event = socket.read_pointer_events();
+            loop {
+                let event = read_event().context("error reading pointer event from niri")?;
+
+                if json {
+                    let event = serde_json::to_string(&event).context("error formatting pointer event")?;
+                    println!("{event}");
+                    continue;
+                }
+
+                match event {
+                    PointerEvent::Position(pos) => {
+                        println!("Pointer position: x={:.1}, y={:.1}, output={}", pos.x, pos.y, pos.output);
+                    }
+                    PointerEvent::Button { button, pressed } => {
+                        println!("Pointer button: button={}, pressed={}", button, pressed);
                     }
                 }
             }

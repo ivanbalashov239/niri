@@ -5265,20 +5265,33 @@ fn bind_allowed_during_screenshot(bind: &Bind, pressed: bool) -> bool {
 }
 
 /// Helper function to apply custom acceleration curve if configured.
-/// This is a placeholder until libinput 1.23+ bindings are available.
-#[allow(unused_variables)]
+/// Requires libinput 1.23+ (enabled via the `libinput_1_23` feature on the `input` crate).
 fn apply_custom_accel_curve(
     device: &mut input::Device,
     curve: &niri_config::AccelProfileCurve,
 ) {
-    // TODO: Apply custom acceleration curve when libinput 1.23+ support is available in input crate
-    // The API would be something like:
-    // let _ = device.config_accel_set_custom_curve(curve.step, &curve.points);
-    warn!(
-        "Custom acceleration curve configuration found but libinput 1.23+ bindings not yet available. \
-         Curve step={}, points={:?}. Using default acceleration instead.",
-        curve.step, curve.points
-    );
+    let Some(accel_config) = input::AccelConfig::new(input::AccelProfile::Custom) else {
+        warn!(
+            "Failed to create custom acceleration config. Curve step={}, points={:?}. Using default acceleration instead.",
+            curve.step, curve.points
+        );
+        return;
+    };
+
+    if let Err(err) = accel_config.set_points(input::AccelType::Motion, curve.step, &curve.points) {
+        warn!(
+            "Failed to set custom acceleration curve points. Curve step={}, points={:?}. Error: {:?}. Using default acceleration instead.",
+            curve.step, curve.points, err
+        );
+        return;
+    }
+
+    if let Err(err) = device.config_accel_apply(accel_config) {
+        warn!(
+            "Failed to apply custom acceleration curve. Curve step={}, points={:?}. Error: {:?}. Using default acceleration instead.",
+            curve.step, curve.points, err
+        );
+    }
 }
 
 pub fn apply_libinput_settings(

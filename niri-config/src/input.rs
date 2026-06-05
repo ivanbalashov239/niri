@@ -345,12 +345,8 @@ impl From<AccelProfile> for input::AccelProfile {
         match value {
             AccelProfile::Adaptive => Self::Adaptive,
             AccelProfile::Flat => Self::Flat,
-            // Custom profile requires libinput 1.23+ which is not yet available in input crate 0.9.1
-            // For now, fall back to Adaptive when Custom is requested
-            AccelProfile::Custom => {
-                tracing::warn!("Custom acceleration profile requested but not yet supported by libinput bindings, falling back to Adaptive");
-                Self::Adaptive
-            }
+            // Custom profile requires libinput 1.23+ which is now available in input crate 0.10.0
+            AccelProfile::Custom => Self::Custom,
         }
     }
 }

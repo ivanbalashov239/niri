@@ -77,12 +77,7 @@ impl Screencasting {
 }
 
 impl State {
-    fn prepare_pw_cast(&mut self) -> anyhow::Result<(GbmDevice<DrmDeviceFd>, FormatSet)> {
-        let gbm = self
-            .backend
-            .gbm_device()
-            .context("no GBM device available")?;
-
+    fn prepare_pw_cast(&mut self) -> anyhow::Result<Option<(GbmDevice<DrmDeviceFd>, FormatSet)>> {
         // Ensure PipeWire is initialized.
         if self.niri.casting.pipewire.is_none() {
             let pw = PipeWire::new(
@@ -92,6 +87,11 @@ impl State {
             .context("error initializing PipeWire")?;
             self.niri.casting.pipewire = Some(pw);
         }
+
+        let Some(gbm) = self.backend.gbm_device() else {
+            // We will offer shm only.
+            return Ok(None);
+        };
 
         let mut render_formats = self
             .backend
@@ -110,7 +110,7 @@ impl State {
             }
         }
 
-        Ok((gbm, render_formats))
+        Ok(Some((gbm, render_formats)))
     }
 
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
@@ -332,7 +332,7 @@ impl State {
             }
         };
 
-        let (gbm, render_formats) = match self.prepare_pw_cast() {
+        let gbm = match self.prepare_pw_cast() {
             Ok(x) => x,
             Err(err) => {
                 warn!("error starting pending screencasts: {err:?}");
@@ -356,7 +356,6 @@ impl State {
         for pending in self.niri.casting.pending_dynamic_casts.drain(..) {
             let res = pw.start_cast(
                 gbm.clone(),
-                render_formats.clone(),
                 pending.session_id,
                 pending.stream_id,
                 target.clone(),
@@ -430,7 +429,7 @@ impl State {
                     }
                 };
 
-                let (gbm, render_formats) = match self.prepare_pw_cast() {
+                let gbm = match self.prepare_pw_cast() {
                     Ok(x) => x,
                     Err(err) => {
                         warn!("error starting screencast: {err:?}");
@@ -442,7 +441,6 @@ impl State {
 
                 let res = pw.start_cast(
                     gbm,
-                    render_formats,
                     session_id,
                     stream_id,
                     target,

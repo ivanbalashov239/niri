@@ -2,7 +2,7 @@
 name: Bug report
 about: Report a bug or a crash
 title: ''
-labels: bug
+type: Bug
 assignees: ''
 
 ---
@@ -10,6 +10,13 @@ assignees: ''
 <!-- Please describe the issue here at the top, then fill in the system information below. -->
 
 <!-- Attaching your full niri config can help diagnose the problem. -->
+<details><summary>Config</summary>
+
+```kdl
+insert config here
+```
+
+</details> 
 
 <!--
 If you have a problem with a specific app, please verify that it is running on Wayland, rather than X11. An easy way is to run xeyes and mouse over the app: xeyes will be able to "see" only X11 windows.
@@ -35,4 +42,13 @@ Please report issues with X11 apps to xwayland-satellite instead of niri: https:
 * GPU: 
 
 <!-- Write your CPU vendor and model, e.g. AMD Ryzen 7 6800H -->
-* CPU:
+* CPU: 
+
+### Checklist
+
+<!-- You can put an x inside the following checkboxes to check them. -->
+* [ ] I searched existing issues and discussions and this issue was not already reported.
+
+<!-- We do not allow LLM-written issues and comments. -->
+<!-- https://github.com/niri-wm/niri/blob/main/CONTRIBUTING.md -->
+* [ ] I did not use an LLM to write this issue.

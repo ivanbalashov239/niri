@@ -2,7 +2,7 @@
 
 In this section you can configure input devices like keyboard and mouse, and some input-related options.
 
-There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `tablet`, `touch`.
+There's a section for each device type: `keyboard`, `touchpad`, `mouse`, `trackpoint`, `trackball`, `tablet`, `touch`.
 Settings in those sections will apply to every device of that type.
 Currently, there's no way to configure specific devices individually (but that is planned).
 
@@ -36,6 +36,7 @@ input {
         natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // pinch-sensitivity 1.0
         // scroll-factor 1.0
         // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "two-finger"
@@ -67,6 +68,11 @@ input {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // accel-profile "custom"
+        // accel-custom-curve {
+        //     step 0.5
+        //     points 0.0 0.0 0.1 0.2 0.5 0.8 1.0 1.0
+        // }
         // scroll-method "on-button-down"
         // scroll-button 273
         // scroll-button-lock
@@ -89,6 +95,8 @@ input {
     tablet {
         // off
         map-to-output "eDP-1"
+        // map-to-focused-output
+        // map-to-focused-window
         // left-handed
         // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
@@ -228,11 +236,15 @@ A few settings are common between input devices:
 
 - `off`: if set, no events will be sent from this device.
 
+> [!TIP]
+> <sup>Since: next release</sup> For touchpads, you can also toggle them on/off at runtime using the [`toggle-touchpad` action](./Configuration:-Key-Bindings.md#toggle-touchpad), without editing the config.
+
 A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackball`:
 
 - `natural-scroll`: if set, inverts the scrolling direction.
 - `accel-speed`: pointer acceleration speed, valid values are from `-1.0` to `1.0` where the default is `0.0`.
-- `accel-profile`: can be `adaptive` (the default) or `flat` (disables pointer acceleration).
+- `accel-profile`: can be `adaptive` (the default), `flat` (disables pointer acceleration), or `custom` (requires libinput 1.23+).
+- `accel-custom-curve`: <sup>Since: next release</sup> defines a custom acceleration curve when `accel-profile` is set to `custom`. See [Custom Acceleration Curves](#custom-acceleration-curves) below for details.
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
 - `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
@@ -247,6 +259,8 @@ Settings specific to `touchpad`s:
 - `dwtp`: disable-when-trackpointing.
 - `drag`: <sup>Since: 25.05</sup> can be `true` or `false`, controls if tap-and-drag is enabled.
 - `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
+- `pinch-sensitivity`: <sup>Since: next release</sup> scales the sensitivity of pinch gestures sent to applications.
+  Values above `1.0` increase sensitivity, while values below `1.0` decrease it.
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
@@ -261,7 +275,7 @@ Settings specific to `tablet` and `touch`:
 
 - `calibration-matrix`: set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
     - <sup>Since: 25.02</sup> for `tablet`
-    - <sup>Since: next release</sup> for `touch`
+    - <sup>Since: 25.11</sup> for `touch`
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 
@@ -280,6 +294,79 @@ input {
 Valid output names are the same as the ones used for output configuration.
 
 <sup>Since: 0.1.7</sup> When a tablet is not mapped to any output, it will map to the union of all connected outputs, without aspect ratio correction.
+
+Settings specific to `tablet`:
+
+- `map-to-focused-output`: <sup>Since: 26.04</sup> will map the tablet to the focused output, takes precedence over `map-to-output`.
+
+- `map-to-focused-window`: <sup>Since: next release</sup> will map the tablet to the focused window's geometry, takes precedence over `map-to-focused-output` and `map-to-output`.
+Falls back to those when no window is focused (for example, in the overview).
+
+    When the tablet is also mapped to a specific output via `map-to-output`, the `map-to-focused-window` flag will map the tablet to the active window on that output.
+    If the tablet isn't mapped to any specific output, it will map the tablet to the current focused window regardless of where it is.
+
+#### Custom Acceleration Curves
+
+<sup>Since: next release</sup>
+
+> **Note**: Custom acceleration curves require libinput 1.23 or later. The configuration parsing is available now, but the actual curve application will only work when libinput 1.23+ bindings become available in the `input` crate. Until then, setting `accel-profile "custom"` will fall back to the `adaptive` profile with a warning in the logs.
+
+Custom acceleration curves allow you to define precise pointer acceleration behavior using a Bezier curve. This is particularly useful for trackpoints and other input devices where you want fine-grained control over acceleration.
+
+A custom curve is defined by:
+- **step**: The step size in device units per curve point (floating point number)
+- **points**: A list of alternating x,y coordinates that define the Bezier curve points
+
+The x values represent normalized input speed (0.0 to 1.0), and the y values represent the output acceleration multiplier.
+
+Example configuration for a trackpoint with aggressive acceleration:
+
+```kdl
+input {
+    trackpoint {
+        accel-profile "custom"
+        accel-custom-curve {
+            step 0.5
+            points 0.0 0.0 0.1 0.2 0.5 0.8 1.0 1.0
+        }
+        natural-scroll
+        accel-speed 0.5
+    }
+}
+```
+
+Example with linear acceleration (1:1 mapping):
+
+```kdl
+input {
+    mouse {
+        accel-profile "custom"
+        accel-custom-curve {
+            step 1.0
+            points 0.0 0.0 1.0 1.0
+        }
+    }
+}
+```
+
+Example with gentle touchpad acceleration:
+
+```kdl
+input {
+    touchpad {
+        accel-profile "custom"
+        accel-custom-curve {
+            step 0.3
+            // Starts slow, accelerates smoothly
+            points 0.0 0.0 0.2 0.15 0.5 0.45 0.8 0.75 1.0 1.0
+        }
+        tap
+        natural-scroll
+    }
+}
+```
+
+For more information about custom acceleration curves, see the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/pointer-acceleration.html#ptraccel-profile-custom).
 
 ### General Settings
 

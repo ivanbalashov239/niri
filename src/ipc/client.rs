@@ -1,4 +1,4 @@
-use std::io::ErrorKind;
+use std::io::{BufRead as _, ErrorKind};
 use std::iter::Peekable;
 use std::path::Path;
 use std::{env, slice};
@@ -7,15 +7,15 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview,
-    Request, Response, Transform, Window, WindowLayout,
+    Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
+    OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
 use crate::cli::Msg;
 use crate::utils::version;
 
-pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
+pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Result<()> {
     // For actions taking paths, prepend the niri CLI's working directory.
     if let Msg::Action {
         action:
@@ -48,8 +48,25 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
+        Msg::Casts => Request::Casts,
+        Msg::RawRequest => {
+            let mut buf = Vec::new();
+            let mut stdin = std::io::stdin().lock();
+            stdin
+                .read_until(b'\n', &mut buf)
+                .context("error reading from stdin")?;
+            serde_json::from_slice(&buf).context("error parsing request JSON from stdin")?
+        }
     };
 
+    if print_request {
+        let json_str =
+            serde_json::to_string(&request).context("error formatting request as JSON")?;
+        println!("{json_str}");
+        return Ok(());
+    }
+
+    let is_event_stream = matches!(request, Request::EventStream);
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
     let result = socket.send(request);
@@ -192,7 +209,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            windows.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+            windows.sort_unstable_by_key(|a| a.id);
 
             for window in windows {
                 print_window(&window);
@@ -219,7 +236,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
 
             let print = |surface: &niri_ipc::LayerSurface| {
                 println!("    Surface:");
-                println!("      Namespace: \"{}\"", &surface.namespace);
+                println!("      Namespace: \"{}\"", surface.namespace);
 
                 let interactivity = match surface.keyboard_interactivity {
                     niri_ipc::LayerSurfaceKeyboardInteractivity::None => "none",
@@ -458,6 +475,12 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowFocusTimestampChanged {
+                        id,
+                        focus_timestamp,
+                    } => {
+                        println!("Window {id}: focus timestamp changed to {focus_timestamp:?}");
+                    }
                     Event::WindowUrgencyChanged { id, urgent } => {
                         println!("Window {id}: urgency changed to {urgent}");
                     }
@@ -490,6 +513,18 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         let description = parts.join(" and ");
                         println!("Screenshot captured: {description}");
                     }
+                    Event::CastsChanged { casts } => {
+                        println!("Casts changed: {casts:?}");
+                    }
+                    Event::CastStartedOrChanged { cast } => {
+                        println!("Cast started or changed: {cast:?}");
+                    }
+                    Event::CastStopped { stream_id } => {
+                        println!("Cast stopped: stream id {stream_id}");
+                    }
+                    Event::TouchpadToggled { on } => {
+                        println!("Touchpad enabled: {on}");
+                    }
                 }
             }
         }
@@ -512,6 +547,41 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("Overview is closed.");
             }
         }
+        Msg::Casts => {
+            let Response::Casts(mut casts) = response else {
+                bail!("unexpected response: expected Casts, got {response:?}");
+            };
+
+            if json {
+                let casts = serde_json::to_string(&casts).context("error formatting response")?;
+                println!("{casts}");
+                return Ok(());
+            }
+
+            if casts.is_empty() {
+                println!("No screencasts.");
+                return Ok(());
+            }
+
+            casts.sort_by_key(|c| (c.session_id, c.stream_id));
+            for cast in casts {
+                print_cast(&cast);
+                println!();
+            }
+        }
+        Msg::RawRequest => {
+            let output = serde_json::to_string(&response).context("error formatting response")?;
+            println!("{output}");
+
+            if is_event_stream {
+                let mut read_event = socket.read_events();
+                loop {
+                    let event = read_event().context("error reading event from niri")?;
+                    let event = serde_json::to_string(&event).context("error formatting event")?;
+                    println!("{event}");
+                }
+            }
+        }
     }
 
     Ok(())
@@ -530,6 +600,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         vrr_supported,
         vrr_enabled,
         logical,
+        max_bpc,
     } = output;
 
     let serial = serial.as_deref().unwrap_or("Unknown");
@@ -611,6 +682,10 @@ fn print_output(output: Output) -> anyhow::Result<()> {
             Transform::Flipped270 => "270° counter-clockwise, flipped horizontally",
         };
         println!("  Transform: {transform}");
+    }
+
+    if let Some(max_bpc) = max_bpc {
+        println!("  Max bits per channel: {max_bpc}");
     }
 
     println!("  Available modes:");
@@ -698,6 +773,43 @@ fn print_window(window: &Window) {
         fmt_rounded(window_offset_in_tile.0),
         fmt_rounded(window_offset_in_tile.1)
     );
+}
+
+fn print_cast(cast: &Cast) {
+    let active = if cast.is_active { "" } else { " (inactive)" };
+    println!("Cast stream ID {}:{active}", cast.stream_id);
+    println!("  Session ID: {}", cast.session_id);
+
+    let kind = match cast.kind {
+        CastKind::PipeWire => "PipeWire",
+        CastKind::WlrScreencopy => "wlr-screencopy",
+        CastKind::ExtImageCopyCapture => "ext-image-copy-capture",
+    };
+    println!("  Kind: {kind}");
+
+    match &cast.target {
+        CastTarget::Nothing {} => {
+            println!("  Target: nothing (cleared)");
+        }
+        CastTarget::Output { name } => {
+            println!("  Target: output \"{name}\"");
+        }
+        CastTarget::Window { id } => {
+            println!("  Target: window {id}");
+        }
+    }
+
+    if cast.is_dynamic_target {
+        println!("  Dynamic cast target");
+    }
+
+    if let Some(pid) = cast.pid {
+        println!("  PID: {pid}");
+    }
+
+    if let Some(node_id) = cast.pw_node_id {
+        println!("  PipeWire node ID: {node_id}");
+    }
 }
 
 fn fmt_rounded(x: f64) -> String {

@@ -5,6 +5,31 @@ The project has grown quite a bit, and we could use all help that we can.
 
 Make sure to join our Matrix chat if you have any questions or want to discuss anything: https://matrix.to/#/#niri:matrix.org
 
+## LLM policy
+
+You're not allowed to use LLMs to *create*.
+All pull request code (including tests), issue descriptions, comments, public reviews, etc. must be human-written.
+You can use LLMs privately (not like I can check or control that), but not to write from scratch.
+You may use LLMs for *translating* your human-written text; in this case you must also provide the original text to reduce the chance of miscommunication.
+
+This policy is motivated by several observations:
+
+- LLM writing is always long and excessive, and wastes time of the reader.
+- LLM issue analysis is not only overly long and excessive, but also frequently wrong.
+- LLM-assisted PRs are usually a bigger chore to review, and the developer frequently struggles to adequately address comments.
+- For code contributions, our goal is to grow contributors with understanding of the niri codebase.
+    Using LLMs to write code sidesteps this learning process.
+- LLMs remove an important *effort barrier* for writing code, even if the result reads fine.
+    The code ends up overly complex to solve non-existing or impractical problems.
+    Such code would not get written in the first place since the effort-benefit ratio is too high.
+    It increases maintenance burden and takes time away from more important PRs.
+
+    This reasoning applies to test code too.
+    LLM-written tests tend to be overly verbose and hard to understand.
+    Since it's *effortless* to generate test code with LLMs, the tests frequently end up repeating themselves, testing things that are trivially true, or testing internal states of the system rather than the outcomes.
+    Such tests may be helpful for initial verification of a new feature, but they are a chore to review and disproportionately increase maintenance burden.
+- Nobody wants to read AI slop.
+
 ## Issues and discussions
 
 This is a good way to help many new and existing users without programming knowledge.
@@ -31,7 +56,7 @@ I would really appreciate help with testing and reviewing them.
 ### Testing
 
 Pick a pull request you like, then build it and give it a go.
-The [Developing niri wiki page](https://yalter.github.io/niri/Development:-Developing-niri) has guidance on running niri test builds.
+The [Developing niri wiki page](https://niri-wm.github.io/niri/Development:-Developing-niri) has guidance on running niri test builds.
 
 Be really thorough with your testing.
 We're striving for polished features in niri, so point out any issues and bugs, even small ones like animation jank.
@@ -77,6 +102,7 @@ When creating pull requests, please keep the following in mind.
 
 - Make sure new features align with niri's design directions. Ideally, there should be an existing issue or discussion where we settled on that solution.
 - Keep pull requests focused on a single feature or bug fix with no unrelated changes.
+- Document unobvious design and architecture decisions. Why you chose one way over the other, which alternatives you tried. This helps to evaluate the code.
 - Try to split your changes into small, self-contained commits. Every commit should build and pass tests. This makes it much easier to review your PR, and bisect for regressions in the future.
     - When addressing PR comments, try to squash the changes straight into the relevant commits.
     - In some cases when the requested changes are big/unclear, you can leave them as separate commits on top, but please squash and otherwise clean up the history when the changes are finalized.
@@ -84,11 +110,19 @@ When creating pull requests, please keep the following in mind.
     - When working on bigger features, I usually start with a big messy commit, then gradually split out smaller self-contained changes from it as the code gets into shape.
     - [git-rebase.io](https://git-rebase.io/) is a helpful guide for splitting commits and cleaning up history in git.
 - When you address a review comment, mark it as resolved.
-- Remember to [run tests](https://yalter.github.io/niri/Development:-Developing-niri#tests) and format the code with `cargo +nightly fmt --all`.
+- Remember to [run tests](https://niri-wm.github.io/niri/Development:-Developing-niri#tests) and format the code with `cargo +nightly fmt --all`.
 - For new layout actions, remember to add them to the randomized tests. For weird Wayland handling, adding client-server tests in `src/tests/` could be very useful.
 - Test your changes by hand thoroughly, including for edge cases and weird interactions. See the Testing section above for some tips.
 - Remember to document new config options on the wiki.
 - When opening a pull request, ensure "Allow edits from maintainers" is enabled, so I can make final tweaks before merging.
+
+### How to get your pull request reviewed more quickly
+
+- Make it small and self-contained. Avoid mixing several unrelated changes in one PR.
+- Split the PR into small and self-contained commits. This makes it much easier to review.
+- Discuss new features, options, or behavior changes beforehand; make sure there's consensus about the design.
+- When creating the pull request, clearly write what it does, what problem it solves, how to test it.
+- Follow the rest of the advice from this document.
 
 
 [cosmic-comp]: https://github.com/pop-os/cosmic-comp

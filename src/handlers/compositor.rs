@@ -16,7 +16,6 @@ use smithay::wayland::compositor::{
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::shell::xdg::ToplevelCachedState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
-use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
@@ -62,10 +61,6 @@ impl CompositorHandler for State {
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
 
-        if is_sync_subsurface(surface) {
-            return;
-        }
-
         let mut root_surface = surface.clone();
         while let Some(parent) = get_parent(&root_surface) {
             root_surface = parent;
@@ -75,6 +70,10 @@ impl CompositorHandler for State {
         self.niri
             .root_surface
             .insert(surface.clone(), root_surface.clone());
+
+        if is_sync_subsurface(surface) {
+            return;
+        }
 
         if surface == &root_surface {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
@@ -135,7 +134,7 @@ impl CompositorHandler for State {
                         // there are in-flight pending configures.
                         debug!("window mapped without proper initial configure");
                         (
-                            ResolvedWindowRules::empty(),
+                            ResolvedWindowRules::default(),
                             None,
                             None,
                             false,
@@ -195,7 +194,10 @@ impl CompositorHandler for State {
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
-                    let mapped = Mapped::new(window, rules, hook);
+                    let mapped = {
+                        let config = self.niri.config.borrow();
+                        Mapped::new(window, rules, hook, &config)
+                    };
                     let window = mapped.window.clone();
 
                     let target = if let Some(p) = &parent {
@@ -291,6 +293,7 @@ impl CompositorHandler for State {
                     self.niri
                         .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
+                    self.niri.window_mru_ui.remove_window(id);
                     self.niri.layout.remove_window(&window, transaction.clone());
                     self.add_default_dmabuf_pre_commit_hook(surface);
 
@@ -311,6 +314,7 @@ impl CompositorHandler for State {
 
                     if let Some(output) = output {
                         self.niri.queue_redraw(&output);
+                        self.niri.queue_redraw_mru_output();
                     }
                     return;
                 }
@@ -337,6 +341,7 @@ impl CompositorHandler for State {
                 }
 
                 // The toplevel remains mapped.
+                self.niri.window_mru_ui.update_window(&self.niri.layout, id);
                 self.niri.layout.update_window(&window, serial);
 
                 // Move the toplevel according to the attach offset.
@@ -357,11 +362,15 @@ impl CompositorHandler for State {
 
                 if let Some(output) = output {
                     self.niri.queue_redraw(&output);
+                    self.niri.queue_redraw_mru_output();
                 }
                 return;
             }
 
             // This is a commit of a non-toplevel root.
+
+            // This might be a popup.
+            self.popups_handle_commit(surface);
         }
 
         // This is a commit of a non-root or a non-toplevel root.
@@ -370,16 +379,19 @@ impl CompositorHandler for State {
             let window = mapped.window.clone();
             let output = output.cloned();
             window.on_commit();
+            self.niri
+                .window_mru_ui
+                .update_window(&self.niri.layout, mapped.id());
             self.niri.layout.update_window(&window, None);
             if let Some(output) = output {
                 self.niri.queue_redraw(&output);
+                self.niri.queue_redraw_mru_output();
             }
             return;
         }
 
-        // This might be a popup.
-        self.popups_handle_commit(surface);
-        if let Some(popup) = self.niri.popups.find_popup(surface) {
+        // This might be a popup unsync subsurface.
+        if let Some(popup) = self.niri.popups.find_popup(&root_surface) {
             if let Some(output) = self.output_for_popup(&popup) {
                 self.niri.queue_redraw(&output.clone());
             }
@@ -478,11 +490,10 @@ impl CompositorHandler for State {
         // subsurface is destroyed; in the case of alacritty, this is the top CSD shadow. But, it
         // gets most of the job done.
         if let Some(root) = self.niri.root_surface.get(surface) {
-            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(root) {
+            if let Some((mapped, output)) = self.niri.layout.find_window_and_output(root) {
                 let window = mapped.window.clone();
-                self.backend.with_primary_renderer(|renderer| {
-                    self.niri.layout.store_unmap_snapshot(renderer, &window);
-                });
+                let output = output.cloned();
+                self.store_unmap_snapshot(&window, output.as_ref());
             }
         }
 
@@ -490,7 +501,16 @@ impl CompositorHandler for State {
             .root_surface
             .retain(|k, v| k != surface && v != surface);
 
-        self.niri.dmabuf_pre_commit_hook.remove(surface);
+        // The object destruction order is not guaranteed to follow the logical role order. So for
+        // example when a client disconnects unexpectedly, WlSurface::destroyed() may be called
+        // before XdgShellHandler::toplevel_destroyed(). In this case, the surface will *not* have
+        // the default dmabuf pre-commit hook: it will still have the toplevel pre-commit hook.
+        //
+        // So, this may come out empty, and then the toplevel pre-commit hook will be removed in the
+        // subsequent toplevel_destroyed() call.
+        if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
+            remove_pre_commit_hook(surface, &hook);
+        }
     }
 }
 
@@ -504,11 +524,13 @@ impl ShmHandler for State {
     }
 }
 
-delegate_compositor!(State);
-delegate_shm!(State);
-
 impl State {
     pub fn add_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
+        if !surface.is_alive() {
+            error!("tried to add dmabuf pre-commit hook for a dead surface");
+            return;
+        }
+
         let hook = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
             let maybe_dmabuf = with_states(surface, |surface_data| {
                 surface_data
@@ -548,13 +570,13 @@ impl State {
         let s = surface.clone();
         if let Some(prev) = self.niri.dmabuf_pre_commit_hook.insert(s, hook) {
             error!("tried to add dmabuf pre-commit hook when there was already one");
-            remove_pre_commit_hook(surface, prev);
+            remove_pre_commit_hook(surface, &prev);
         }
     }
 
     pub fn remove_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
         if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
-            remove_pre_commit_hook(surface, hook);
+            remove_pre_commit_hook(surface, &hook);
         } else {
             error!("tried to remove dmabuf pre-commit hook but there was none");
         }

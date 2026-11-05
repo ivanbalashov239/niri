@@ -12,7 +12,7 @@ Portals **require** [running niri as a session](./Getting-Started.md), which mea
 
 * `xdg-desktop-portal-gtk`: implements most of the basic functionality, this is the "default fallback portal".
 * `xdg-desktop-portal-gnome`: required for screencasting support.
-* `gnome-keyring`: implements the Secret portal, required for certain apps to work.
+* `oo7-portal` or `gnome-keyring`: implements the Secret portal, required for certain apps to work.
 
 Then systemd should start them on-demand automatically. These particular portals are configured in `niri-portals.conf` which [must be installed](./Getting-Started.md#manual-installation) in the correct location.
 
@@ -25,6 +25,9 @@ dconf write /org/gnome/desktop/interface/color-scheme '"prefer-dark"'
 Note that if you're using the provided `resources/niri-portals.conf`, you also need to install the `nautilus` file manager in order for file chooser dialogues to work properly. This is necessary because xdg-desktop-portal-gnome uses nautilus as the file chooser by default starting from version 47.0.
 
 If you do not want to install `nautilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
+
+> [!WARNING]
+> Do not set the `GDK_BACKEND` environment variable globally as this will break the screencast portal.
 
 ### Authentication Agent
 

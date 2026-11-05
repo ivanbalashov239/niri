@@ -41,7 +41,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.8.0"
+//! niri-ipc = "=26.4.0"
 //! ```
 //!
 //! ## Features
@@ -54,6 +54,7 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +117,8 @@ pub enum Request {
     ReturnError,
     /// Request information about the overview.
     OverviewState,
+    /// Request information about screencasts.
+    Casts,
 }
 
 /// Reply from niri to client.
@@ -160,6 +163,8 @@ pub enum Response {
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
     OverviewState(Overview),
+    /// Information about screencasts.
+    Casts(Vec<Cast>),
 }
 
 /// Overview information.
@@ -190,8 +195,15 @@ pub enum Action {
     /// Exit niri.
     Quit {
         /// Skip the "Press Enter to confirm" prompt.
+        #[serde(default)]
         #[cfg_attr(feature = "clap", arg(short, long))]
         skip_confirmation: bool,
+    },
+    /// Change the virtual terminal.
+    ChangeVt {
+        /// Virtual terminal to change to.
+        #[cfg_attr(feature = "clap", arg(required = true))]
+        vt: u8,
     },
     /// Power off all monitors via DPMS.
     PowerOffMonitors {},
@@ -218,6 +230,7 @@ pub enum Action {
     /// Open the screenshot UI.
     Screenshot {
         ///  Whether to show the mouse pointer by default in the screenshot UI.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
 
@@ -234,10 +247,12 @@ pub enum Action {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
         /// The screenshot is saved according to the `screenshot-path` config setting.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
         /// Whether to include the mouse pointer in the screenshot.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
 
@@ -260,8 +275,17 @@ pub enum Action {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
         /// The screenshot is saved according to the `screenshot-path` config setting.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Whether to include the mouse pointer in the screenshot.
+        ///
+        /// The pointer will be included only if the window is currently receiving pointer input
+        /// (usually this means the pointer is on top of the window).
+        #[serde(default)]
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
+        show_pointer: bool,
 
         /// Path to save the screenshot to.
         ///
@@ -428,7 +452,7 @@ pub enum Action {
     },
     /// Consume the window to the right into the focused column.
     ConsumeWindowIntoColumn {},
-    /// Expel the focused window from the column.
+    /// Expel the bottom window from the focused column.
     ExpelWindowFromColumn {},
     /// Swap focused window with one to the right.
     SwapWindowRight {},
@@ -476,6 +500,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the window to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -485,6 +510,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the window to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -509,6 +535,7 @@ pub enum Action {
         /// If `true` (the default) and the window to move is focused, the focus will follow the
         /// window to the new workspace. If `false`, the focus will remain on the original
         /// workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -518,6 +545,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the column to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -527,6 +555,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the column to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -540,6 +569,7 @@ pub enum Action {
         ///
         /// If `true` (the default), the focus will follow the column to the new workspace. If
         /// `false`, the focus will remain on the original workspace.
+        #[serde(default = "default_true")]
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
@@ -795,6 +825,8 @@ pub enum Action {
     DebugToggleOpaqueRegions {},
     /// Toggle visualization of output damage.
     DebugToggleDamage {},
+    /// Toggle the touchpad on/off at runtime.
+    ToggleTouchpad {},
     /// Move the focused window between the floating and the tiling layout.
     ToggleWindowFloating {
         /// Id of the window to move.
@@ -835,6 +867,7 @@ pub enum Action {
         id: Option<u64>,
 
         /// How to change the X position.
+        #[serde(default = "default_position_change")]
         #[cfg_attr(
             feature = "clap",
             arg(short, long, default_value = "+0", allow_hyphen_values = true)
@@ -842,6 +875,7 @@ pub enum Action {
         x: PositionChange,
 
         /// How to change the Y position.
+        #[serde(default = "default_position_change")]
         #[cfg_attr(
             feature = "clap",
             arg(short, long, default_value = "+0", allow_hyphen_values = true)
@@ -886,6 +920,16 @@ pub enum Action {
     },
     /// Clear the dynamic cast target, making it show nothing.
     ClearDynamicCastTarget {},
+    /// Stop a PipeWire screencast.
+    ///
+    /// wlr-screencopy screencasts cannot currently be stopped via IPC.
+    StopCast {
+        /// Session ID of the screencast to stop.
+        ///
+        /// If the session has multiple screencast streams, this will stop all of them.
+        #[cfg_attr(feature = "clap", arg(long))]
+        session_id: u64,
+    },
     /// Toggle (open/close) the Overview.
     ToggleOverview {},
     /// Open the Overview.
@@ -914,7 +958,13 @@ pub enum Action {
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
     /// niri's config file watcher to notice the changes.
-    LoadConfigFile {},
+    LoadConfigFile {
+        /// Path of a new config file to load.
+        ///
+        /// If unset, reloads the current config file.
+        #[cfg_attr(feature = "clap", arg(long))]
+        path: Option<String>,
+    },
 }
 
 /// Change in window or column size.
@@ -1069,6 +1119,12 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", command(flatten))]
         vrr: VrrToSet,
     },
+    /// Set the maximum bits per channel (bit depth).
+    MaxBpc {
+        /// Maximum bits per channel to set.
+        #[cfg_attr(feature = "clap", arg())]
+        max_bpc: MaxBpc,
+    },
 }
 
 /// Output mode to set.
@@ -1166,6 +1222,7 @@ pub struct VrrToSet {
     )]
     pub vrr: bool,
     /// Only enable when the output shows a window matching the variable-refresh-rate window rule.
+    #[serde(default)]
     #[cfg_attr(feature = "clap", arg(long))]
     pub on_demand: bool,
 }
@@ -1200,6 +1257,8 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
+    /// Maximum bits per channel (bit depth), if known.
+    pub max_bpc: Option<u8>,
 }
 
 /// Output mode.
@@ -1263,6 +1322,32 @@ pub enum Transform {
     Flipped270,
 }
 
+/// Output maximum bits per channel.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum MaxBpc {
+    /// 6-bit.
+    #[serde(rename = "6")]
+    _6 = 6,
+    /// 8-bit.
+    #[default]
+    #[serde(rename = "8")]
+    _8 = 8,
+    /// 10-bit.
+    #[serde(rename = "10")]
+    _10 = 10,
+    /// 12-bit.
+    #[serde(rename = "12")]
+    _12 = 12,
+    /// 14-bit.
+    #[serde(rename = "14")]
+    _14 = 14,
+    /// 16-bit.
+    #[serde(rename = "16")]
+    _16 = 16,
+}
+
 /// Toplevel window.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1298,6 +1383,24 @@ pub struct Window {
     pub is_urgent: bool,
     /// Position- and size-related properties of the window.
     pub layout: WindowLayout,
+    /// Timestamp when the window was most recently focused.
+    ///
+    /// This timestamp is intended for most-recently-used window switchers, i.e. Alt-Tab. It only
+    /// updates after some debounce time so that quick window switching doesn't mark intermediate
+    /// windows as recently focused.
+    ///
+    /// The timestamp comes from the monotonic clock.
+    pub focus_timestamp: Option<Timestamp>,
+}
+
+/// A moment in time.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Timestamp {
+    /// Number of whole seconds.
+    pub secs: u64,
+    /// Fractional part of the timestamp in nanoseconds (10<sup>-9</sup> seconds).
+    pub nanos: u32,
 }
 
 /// Position- and size-related properties of a [`Window`].
@@ -1447,6 +1550,85 @@ pub struct LayerSurface {
     pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
 }
 
+/// A screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Cast {
+    /// Stream ID of the screencast that uniquely identifies it.
+    pub stream_id: u64,
+    /// Session ID of the screencast.
+    ///
+    /// A session can have multiple screencast streams. Then multiple `Cast`s will have the same
+    /// `session_id`. Though, usually there's only one stream per session.
+    ///
+    /// Do not confuse `session_id` with [`stream_id`](Self::stream_id).
+    pub session_id: u64,
+    /// Kind of this screencast.
+    pub kind: CastKind,
+    /// Target being captured.
+    pub target: CastTarget,
+    /// Whether this is a Dynamic Cast Target screencast.
+    ///
+    /// Meaning that actions like `SetDynamicCastWindow` will act on this screencast.
+    ///
+    /// Keep in mind that the target can change even if this is `false`.
+    pub is_dynamic_target: bool,
+    /// Whether the cast is currently streaming frames.
+    ///
+    /// This can be `false` for example when switching away to a different scene in OBS, which
+    /// pauses the stream.
+    pub is_active: bool,
+    /// Process ID of the screencast consumer, if known.
+    ///
+    /// Currently, only wlr-screencopy screencasts can have a pid.
+    pub pid: Option<i32>,
+    /// PipeWire node ID of the screencast stream.
+    ///
+    /// This is `None` for wlr-screencopy casts, and also for PipeWire casts before the node is
+    /// created (when the cast is just starting up).
+    pub pw_node_id: Option<u32>,
+}
+
+/// Kind of screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CastKind {
+    /// PipeWire screencast, typically via xdg-desktop-portal-gnome.
+    PipeWire,
+    /// wlr-screencopy protocol screencast.
+    ///
+    /// Tools like wf-recorder, and the xdg-desktop-portal-wlr portal.
+    ///
+    /// Only wlr-screencopy with damage tracking is reported here. Screencopy without damage is
+    /// treated as a regular screenshot and not reported as a screencast.
+    WlrScreencopy,
+    /// ext-image-copy-capture protocol screencast.
+    ///
+    /// Tools like wayvnc, wl-mirror, and the xdg-desktop-portal-wlr portal.
+    ///
+    /// A client capturing both an output and the cursor creates two sessions, which are reported
+    /// as two `Cast`s sharing one [`session_id`](Cast::session_id).
+    ExtImageCopyCapture,
+}
+
+/// Target of a screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CastTarget {
+    /// The target is not yet set, or was cleared.
+    Nothing {},
+    /// Casting an output.
+    Output {
+        /// Name of the screencasted output.
+        name: String,
+    },
+    /// Casting a window.
+    Window {
+        /// ID of the screencasted window.
+        id: u64,
+    },
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1513,6 +1695,17 @@ pub enum Event {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
     },
+    /// Window focus timestamp changed.
+    ///
+    /// This event is separate from [`Event::WindowFocusChanged`] because the focus timestamp only
+    /// updates after some debounce time so that quick window switching doesn't mark intermediate
+    /// windows as recently focused.
+    WindowFocusTimestampChanged {
+        /// Id of the window.
+        id: u64,
+        /// The new focus timestamp.
+        focus_timestamp: Option<Timestamp>,
+    },
     /// Window urgency changed.
     WindowUrgencyChanged {
         /// Id of the window.
@@ -1558,6 +1751,47 @@ pub enum Event {
         /// be converted to a `String` (e.g. contained invalid UTF-8 bytes).
         path: Option<String>,
     },
+    /// The screencasts have changed.
+    CastsChanged {
+        /// The new screencast information.
+        ///
+        /// This configuration completely replaces the previous configuration. I.e. if any casts
+        /// are missing from here, then they were stopped.
+        casts: Vec<Cast>,
+    },
+    /// A screencast started, or an existing cast changed.
+    CastStartedOrChanged {
+        /// The cast that started or changed.
+        cast: Cast,
+    },
+    /// A screencast stopped.
+    CastStopped {
+        /// Stream ID of the stopped screencast.
+        stream_id: u64,
+    },
+    /// Touchpad toggled on/off via [`Action::ToggleTouchpad`].
+    TouchpadToggled {
+        /// Whether the touchpad is now enabled.
+        ///
+        /// Note that this only indicates the [`Action::ToggleTouchpad`] state. The touchpad can be
+        /// disabled in hardware, or via `input { touchpad { off; } }`—this is not reflected here.
+        on: bool,
+    },
+}
+
+impl From<Duration> for Timestamp {
+    fn from(value: Duration) -> Self {
+        Timestamp {
+            secs: value.as_secs(),
+            nanos: value.subsec_nanos(),
+        }
+    }
+}
+
+impl From<Timestamp> for Duration {
+    fn from(value: Timestamp) -> Self {
+        Duration::new(value.secs, value.nanos)
+    }
 }
 
 impl FromStr for WorkspaceReferenceArg {
@@ -1702,6 +1936,44 @@ impl FromStr for Transform {
                 r#"invalid transform, can be "90", "180", "270", "#,
                 r#""flipped", "flipped-90", "flipped-180" or "flipped-270""#
             )),
+        }
+    }
+}
+
+impl TryFrom<u8> for MaxBpc {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            6 => Ok(MaxBpc::_6),
+            8 => Ok(MaxBpc::_8),
+            10 => Ok(MaxBpc::_10),
+            12 => Ok(MaxBpc::_12),
+            14 => Ok(MaxBpc::_14),
+            16 => Ok(MaxBpc::_16),
+            _ => Err("invalid max-bpc, can be 6, 8, 10, 12, 14, 16"),
+        }
+    }
+}
+
+impl FromStr for MaxBpc {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_from(s.parse::<u8>().unwrap_or_default())
+    }
+}
+
+impl FromStr for Layer {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "background" => Ok(Self::Background),
+            "bottom" => Ok(Self::Bottom),
+            "top" => Ok(Self::Top),
+            "overlay" => Ok(Self::Overlay),
+            _ => Err("invalid layer, can be \"background\", \"bottom\", \"top\" or \"overlay\""),
         }
     }
 }
@@ -1863,6 +2135,14 @@ impl OutputAction {
             _ => Ok(()),
         }
     }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_position_change() -> PositionChange {
+    PositionChange::AdjustFixed(0.)
 }
 
 #[cfg(test)]

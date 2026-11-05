@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 use std::mem;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::Deserialize;
-use zbus::fdo::RequestNameFlags;
 use zbus::object_server::{InterfaceRef, SignalEmitter};
 use zbus::zvariant::{DeserializeDict, OwnedObjectPath, SerializeDict, Type, Value};
 use zbus::{fdo, interface, ObjectServer};
 
-use super::Start;
+use super::{request_name, Start};
 use crate::backend::IpcOutputMap;
+use crate::utils::{CastSessionId, CastStreamId};
 
 #[derive(Clone)]
 pub struct ScreenCast {
@@ -22,7 +22,7 @@ pub struct ScreenCast {
 
 #[derive(Clone)]
 pub struct Session {
-    id: usize,
+    id: CastSessionId,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
     to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     #[allow(clippy::type_complexity)]
@@ -30,7 +30,7 @@ pub struct Session {
     stopped: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Default, Deserialize, Type, Clone, Copy)]
+#[derive(Debug, Default, Deserialize, Type, Clone, Copy, PartialEq, Eq)]
 pub enum CursorMode {
     #[default]
     Hidden = 0,
@@ -58,12 +58,10 @@ struct RecordWindowProperties {
     _is_recording: Option<bool>,
 }
 
-static STREAM_ID: AtomicUsize = AtomicUsize::new(0);
-
 #[derive(Clone)]
 pub struct Stream {
-    id: usize,
-    session_id: usize,
+    id: CastStreamId,
+    session_id: CastSessionId,
     target: StreamTarget,
     cursor_mode: CursorMode,
     was_started: Arc<AtomicBool>,
@@ -94,14 +92,14 @@ struct StreamParameters {
 
 pub enum ScreenCastToNiri {
     StartCast {
-        session_id: usize,
-        stream_id: usize,
+        session_id: CastSessionId,
+        stream_id: CastStreamId,
         target: StreamTargetId,
         cursor_mode: CursorMode,
         signal_ctx: SignalEmitter<'static>,
     },
     StopCast {
-        session_id: usize,
+        session_id: CastSessionId,
     },
 }
 
@@ -118,9 +116,8 @@ impl ScreenCast {
             ));
         }
 
-        static NUMBER: AtomicUsize = AtomicUsize::new(0);
-        let session_id = NUMBER.fetch_add(1, Ordering::SeqCst);
-        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{session_id}");
+        let session_id = CastSessionId::next();
+        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id.get());
         let path = OwnedObjectPath::try_from(path).unwrap();
 
         let session = Session::new(session_id, self.ipc_outputs.clone(), self.to_niri.clone());
@@ -207,8 +204,8 @@ impl Session {
             return Err(fdo::Error::Failed("monitor is disabled".to_owned()));
         }
 
-        let stream_id = STREAM_ID.fetch_add(1, Ordering::SeqCst);
-        let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{stream_id}");
+        let stream_id = CastStreamId::next();
+        let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{}", stream_id.get());
         let path = OwnedObjectPath::try_from(path).unwrap();
 
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
@@ -244,8 +241,8 @@ impl Session {
     ) -> fdo::Result<OwnedObjectPath> {
         debug!(?properties, "record_window");
 
-        let stream_id = STREAM_ID.fetch_add(1, Ordering::SeqCst);
-        let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{stream_id}");
+        let stream_id = CastStreamId::next();
+        let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{}", stream_id.get());
         let path = OwnedObjectPath::try_from(path).unwrap();
 
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
@@ -321,15 +318,11 @@ impl ScreenCast {
 }
 
 impl Start for ScreenCast {
-    fn start(self) -> anyhow::Result<zbus::blocking::Connection> {
+    fn start(self, monitor: bool) -> anyhow::Result<zbus::blocking::Connection> {
         let conn = zbus::blocking::Connection::session()?;
-        let flags = RequestNameFlags::AllowReplacement
-            | RequestNameFlags::ReplaceExisting
-            | RequestNameFlags::DoNotQueue;
-
         conn.object_server()
             .at("/org/gnome/Mutter/ScreenCast", self)?;
-        conn.request_name_with_flags("org.gnome.Mutter.ScreenCast", flags)?;
+        request_name(&conn, "org.gnome.Mutter.ScreenCast", monitor)?;
 
         Ok(conn)
     }
@@ -337,7 +330,7 @@ impl Start for ScreenCast {
 
 impl Session {
     pub fn new(
-        id: usize,
+        id: CastSessionId,
         ipc_outputs: Arc<Mutex<IpcOutputMap>>,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
@@ -361,8 +354,8 @@ impl Drop for Session {
 
 impl Stream {
     fn new(
-        id: usize,
-        session_id: usize,
+        id: CastStreamId,
+        session_id: CastSessionId,
         target: StreamTarget,
         cursor_mode: CursorMode,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,

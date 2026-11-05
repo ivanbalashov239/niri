@@ -1,5 +1,39 @@
+## Quick start
+
+Use these commands to install niri with [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) for a fairly out-of-the-box experience.
+
+Fedora:
+```
+sudo dnf copr enable avengemedia/dms
+sudo dnf install niri dms
+systemctl --user add-wants niri.service dms
+```
+
+Arch Linux:
+```
+sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty dms-shell-niri matugen cava qt6-multimedia-ffmpeg
+systemctl --user add-wants niri.service dms
+```
+
+Ubuntu 25.10 and above:
+```
+sudo add-apt-repository ppa:avengemedia/danklinux
+sudo add-apt-repository ppa:avengemedia/dms
+sudo apt install niri dms
+```
+
+After running these commands, log out, choose Niri in your display manager, and log back in.
+Or, if not using a display manager, run `niri-session` on a TTY.
+
+The default niri config will run Waybar, so you might get two bars on screen.
+To fix this, stop Waybar with `pkill waybar` command, then open `~/.config/niri/config.kdl` and delete the `spawn-at-startup "waybar"` line.
+
+Check the DankMaterialShell's [compositor setup page](https://danklinux.com/docs/dankmaterialshell/compositors#niri-configuration) to learn how to configure DMS-specific binds and other niri integrations.
+
+## Slower and more considered start
+
 The easiest way to get niri is to install one of the distribution packages.
-Here are some of them: [Fedora COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri/) and [nightly COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri-git/) (which I maintain myself), [NixOS Flake](https://github.com/sodiboo/niri-flake), and some more from repology below, including a [pacstall package](https://pacstall.dev/packages/niri/) for Debian-based distros.
+Here are some of them: [Fedora COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri/) and [nightly COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri-git/) (which I maintain myself), [NixOS Flake](https://github.com/epireyn/niri-flake) (maintained fork of [sodiboo/niri-flake](https://github.com/sodiboo/niri-flake)), and some more from repology below, including a [pacstall package](https://pacstall.dev/packages/niri/) for Debian-based distros.
 See the [Building](#building) section if you'd like to compile niri yourself and the [Packaging niri](./Packaging-niri.md) page if you want to package niri.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/niri.svg)](https://repology.org/project/niri/versions)
@@ -11,6 +45,10 @@ To exit niri, press <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd>.
 If you're not using a display manager, you should run `niri-session` (systemd/dinit) or `niri --session` (others) from a TTY.
 The `--session` flag will make niri import its environment variables globally into the system manager and D-Bus, and start its D-Bus services.
 The `niri-session` script will additionally start niri as a systemd/dinit service, which starts up a graphical session target required by some services like portals.
+
+> [!WARNING]
+> Running niri directly from a TTY means that exiting or crashing niri will put the user straight into an unlocked shell prompt.
+> Set up a display manager to avoid this.
 
 You can also run `niri` inside an existing desktop session.
 Then it will open as a window, where you can give it a try.
@@ -27,8 +65,16 @@ Some desktop environments and shells work with niri and can give a more out-of-t
 
 - [LXQt](https://lxqt-project.org/) officially supports niri, see [their wiki](https://github.com/lxqt/lxqt/wiki/ConfigWaylandSettings#general) for details on setting it up.
 - Many [XFCE](https://www.xfce.org/) components work on Wayland, including niri. See [their wiki](https://wiki.xfce.org/releng/wayland_roadmap#component_specific_status) for details.
-- There are complete desktop shells based on Quickshell that support niri, for example [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) and [Noctalia](https://github.com/noctalia-dev/noctalia-shell).
+- There are complete desktop shells that support niri, for example [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) and [Noctalia](https://github.com/noctalia-dev/noctalia-shell).
 - You can run a [COSMIC](https://system76.com/cosmic/) session with niri using [cosmic-ext-extra-sessions](https://github.com/Drakulix/cosmic-ext-extra-sessions).
+
+### Default applications
+
+If you install niri alongside GNOME or KDE and want to keep their default app associations (e.g. which image viewer or video player to use), symlink their `mimeapps.list` like so:
+
+```
+ln -s /usr/share/applications/gnome-mimeapps.list ~/.local/share/applications/niri-mimeapps.list
+```
 
 ### NVIDIA
 
@@ -112,13 +158,10 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>PageUp</kbd> | Move the focused column to the workspace above |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageDown</kbd> | Move the focused workspace down |
 | <kbd>Mod</kbd><kbd>Shift</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>PageUp</kbd> | Move the focused workspace up |
-| <kbd>Mod</kbd><kbd>,</kbd> | Consume the window to the right into the focused column |
-| <kbd>Mod</kbd><kbd>.</kbd> | Expel the bottom window in the focused column into its own column |
 | <kbd>Mod</kbd><kbd>[</kbd> | Consume or expel the focused window to the left |
 | <kbd>Mod</kbd><kbd>]</kbd> | Consume or expel the focused window to the right |
-| <kbd>Mod</kbd><kbd>R</kbd> | Toggle between preset column widths |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>R</kbd> | Toggle between preset column heights |
-| <kbd>Mod</kbd><kbd>F</kbd> | Maximize column |
+| <kbd>Mod</kbd><kbd>R</kbd> and <kbd>Mod</kbd><kbd>Shift</kbd><kbd>R</kbd> | Toggle between preset column widths forward and back |
+| <kbd>Mod</kbd><kbd>M</kbd> | Maximize window |
 | <kbd>Mod</kbd><kbd>C</kbd> | Center column within view |
 | <kbd>Mod</kbd><kbd>-</kbd> | Decrease column width by 10% |
 | <kbd>Mod</kbd><kbd>=</kbd> | Increase column width by 10% |
@@ -190,7 +233,7 @@ This defaults to `/usr/bin/niri`.
 | `resources/niri.service` (systemd) | `/etc/systemd/user/` |
 | `resources/niri-shutdown.target` (systemd) | `/etc/systemd/user/` |
 | `resources/dinit/niri` (dinit) | `/etc/dinit.d/user/` |
-| `resources/dinit/niri-shutdown` (dinit) | `/etc/dinit.d/user/` |
+| `resources/dinit/niri.target` (dinit) | `/etc/dinit.d/user/` |
 
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel

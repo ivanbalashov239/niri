@@ -1,10 +1,10 @@
 use std::cmp::{max, min};
 
 use niri_config::utils::MergeWith as _;
-use niri_config::window_rule::{Match, WindowRule};
+use niri_config::window_rule::{Match, OnXdgActivate, VrrRule, WindowRule};
 use niri_config::{
-    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
-    TabIndicatorRule,
+    BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
+    ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -30,7 +30,7 @@ pub enum WindowRef<'a> {
 }
 
 /// Rules fully resolved for a window.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct ResolvedWindowRules {
     /// Default width for this window.
     ///
@@ -73,6 +73,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
 
+    /// What to do on xdg-activation requests.
+    pub on_xdg_activate: Option<OnXdgActivate>,
+
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
     /// Extra bound on the minimum window height.
@@ -112,13 +115,22 @@ pub struct ResolvedWindowRules {
     pub block_out_from: Option<BlockOutFrom>,
 
     /// Whether to enable VRR on this window's primary output if it is on-demand.
-    pub variable_refresh_rate: Option<bool>,
+    pub variable_refresh_rate: Option<VrrRule>,
 
     /// Multiplier for all scroll events sent to this window.
     pub scroll_factor: Option<f64>,
 
+    /// Pinch gesture sensitivity for this window.
+    pub pinch_sensitivity: Option<f64>,
+
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
+
+    /// Background effect configuration.
+    pub background_effect: BackgroundEffect,
+
+    /// Rules for this window's popups.
+    pub popups: ResolvedPopupsRules,
 }
 
 impl<'a> WindowRef<'a> {
@@ -174,79 +186,10 @@ impl<'a> WindowRef<'a> {
 }
 
 impl ResolvedWindowRules {
-    pub const fn empty() -> Self {
-        Self {
-            default_width: None,
-            default_height: None,
-            default_column_display: None,
-            default_floating_position: None,
-            open_on_output: None,
-            open_on_workspace: None,
-            open_maximized: None,
-            open_maximized_to_edges: None,
-            open_fullscreen: None,
-            open_floating: None,
-            open_focused: None,
-            min_width: None,
-            min_height: None,
-            max_width: None,
-            max_height: None,
-            focus_ring: BorderRule {
-                off: false,
-                on: false,
-                width: None,
-                active_color: None,
-                inactive_color: None,
-                urgent_color: None,
-                active_gradient: None,
-                inactive_gradient: None,
-                urgent_gradient: None,
-            },
-            border: BorderRule {
-                off: false,
-                on: false,
-                width: None,
-                active_color: None,
-                inactive_color: None,
-                urgent_color: None,
-                active_gradient: None,
-                inactive_gradient: None,
-                urgent_gradient: None,
-            },
-            shadow: ShadowRule {
-                off: false,
-                on: false,
-                offset: None,
-                softness: None,
-                spread: None,
-                draw_behind_window: None,
-                color: None,
-                inactive_color: None,
-            },
-            tab_indicator: TabIndicatorRule {
-                active_color: None,
-                inactive_color: None,
-                urgent_color: None,
-                active_gradient: None,
-                inactive_gradient: None,
-                urgent_gradient: None,
-            },
-            draw_border_with_background: None,
-            opacity: None,
-            geometry_corner_radius: None,
-            clip_to_geometry: None,
-            baba_is_float: None,
-            block_out_from: None,
-            variable_refresh_rate: None,
-            scroll_factor: None,
-            tiled_state: None,
-        }
-    }
-
     pub fn compute(rules: &[WindowRule], window: WindowRef, is_at_startup: bool) -> Self {
         let _span = tracy_client::span!("ResolvedWindowRules::compute");
 
-        let mut resolved = ResolvedWindowRules::empty();
+        let mut resolved = ResolvedWindowRules::default();
 
         with_toplevel_role(window.toplevel(), |role| {
             // Ensure server_pending like in Smithay's with_pending_state().
@@ -320,6 +263,10 @@ impl ResolvedWindowRules {
                     resolved.open_focused = Some(x);
                 }
 
+                if let Some(x) = rule.on_xdg_activate {
+                    resolved.on_xdg_activate = Some(x);
+                }
+
                 if let Some(x) = rule.min_width {
                     resolved.min_width = Some(x);
                 }
@@ -362,9 +309,18 @@ impl ResolvedWindowRules {
                 if let Some(x) = rule.scroll_factor {
                     resolved.scroll_factor = Some(x.0);
                 }
+                if let Some(x) = rule.pinch_sensitivity {
+                    resolved.pinch_sensitivity = Some(x.0);
+                }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
                 }
+
+                resolved
+                    .background_effect
+                    .merge_with(&rule.background_effect);
+
+                resolved.popups.merge_with(&rule.popups);
             }
 
             resolved.open_on_output = open_on_output.map(|x| x.to_owned());

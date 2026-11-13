@@ -1512,6 +1512,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_curve: None,
                     scroll_method: Some(
                         TwoFinger,
                     ),
@@ -1551,6 +1552,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_curve: None,
                     scroll_method: Some(
                         NoScroll,
                     ),
@@ -1581,6 +1583,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_curve: None,
                     scroll_method: Some(
                         OnButtonDown,
                     ),
@@ -1600,6 +1603,7 @@ mod tests {
                     accel_profile: Some(
                         Flat,
                     ),
+                    accel_custom_curve: None,
                     scroll_method: Some(
                         Edge,
                     ),

@@ -106,20 +106,22 @@ impl Socket {
     /// # Example
     ///
     /// ```no_run
+    /// use niri_ipc::{Request, Response};
     /// use niri_ipc::socket::Socket;
     ///
-    /// let socket = Socket::connect()?;
-    /// socket.send(Request::PointerStream)?;
-    /// let response = socket.recv()?;
+    /// fn main() -> std::io::Result<()> {
+    ///     let mut socket = Socket::connect()?;
     ///
-    /// if let Response::Handled = response {
-    ///     let mut read_event = socket.read_pointer_events();
-    ///     while let Ok(event) = read_event() {
-    ///         println!("Received pointer event: {event:?}");
+    ///     let reply = socket.send(Request::PointerStream)?;
+    ///     if matches!(reply, Ok(Response::Handled)) {
+    ///         let mut read_event = socket.read_pointer_events();
+    ///         while let Ok(event) = read_event() {
+    ///             println!("Received pointer event: {event:?}");
+    ///         }
     ///     }
-    /// }
     ///
-    /// Ok(())
+    ///     Ok(())
+    /// }
     /// ```
     pub fn read_pointer_events(self) -> impl FnMut() -> io::Result<PointerEvent> {
         let Self { mut stream } = self;

@@ -16,6 +16,9 @@ pub struct ResolvedLayerRules {
     /// Whether to block out this layer surface from certain render targets.
     pub block_out_from: Option<BlockOutFrom>,
 
+    /// Whether to exclude this layer surface from all screen captures.
+    pub exclude_from_capture: bool,
+
     /// Shadow overrides.
     pub shadow: ShadowRule,
 
@@ -68,6 +71,9 @@ impl ResolvedLayerRules {
             }
             if let Some(x) = rule.block_out_from {
                 resolved.block_out_from = Some(x);
+            }
+            if rule.exclude_from_capture {
+                resolved.exclude_from_capture = true;
             }
             if let Some(x) = rule.geometry_corner_radius {
                 resolved.geometry_corner_radius = Some(x);

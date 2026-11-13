@@ -130,6 +130,23 @@ layer-rule {
 }
 ```
 
+#### `exclude-from-capture`
+
+Exclude the surface from all screen captures, including xdg-desktop-portal screencasts and wlr-screencopy-based screenshots.
+
+Unlike [`block-out-from`](#block-out-from), which replaces the surface with a solid black rectangle, `exclude-from-capture` omits the surface entirely, so whatever is behind it shows through.
+
+This is useful for fullscreen overlays that should be visible on the output but must not appear in captures, such as screen magnification or other effects that would otherwise capture their own output.
+
+```kdl
+// Exclude a fullscreen effects overlay from screenshots and screencasts.
+layer-rule {
+    match namespace="^gaze-control-effects$"
+
+    exclude-from-capture
+}
+```
+
 #### `opacity`
 
 Set the opacity of the surface.

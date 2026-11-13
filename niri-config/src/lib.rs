@@ -1408,6 +1408,7 @@ mod tests {
             layer-rule {
                 match namespace="^notifications$"
                 block-out-from "screencast"
+                exclude-from-capture
             }
 
             binds {
@@ -2446,6 +2447,7 @@ mod tests {
                     block_out_from: Some(
                         Screencast,
                     ),
+                    exclude_from_capture: true,
                     shadow: ShadowRule {
                         off: false,
                         on: false,

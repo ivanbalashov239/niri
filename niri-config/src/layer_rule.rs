@@ -13,6 +13,8 @@ pub struct LayerRule {
     pub opacity: Option<f32>,
     #[knuffel(child, unwrap(argument))]
     pub block_out_from: Option<BlockOutFrom>,
+    #[knuffel(child)]
+    pub exclude_from_capture: bool,
     #[knuffel(child, default)]
     pub shadow: ShadowRule,
     #[knuffel(child)]

@@ -2656,7 +2656,12 @@ impl State {
             Action::SetPointer { x, y, output } => {
                 let location = if let Some(output_name) = output {
                     // Find the specified output
-                    if let Some(output) = self.niri.global_space.outputs().find(|o| o.name() == output_name) {
+                    if let Some(output) = self
+                        .niri
+                        .global_space
+                        .outputs()
+                        .find(|o| o.name() == output_name)
+                    {
                         let geo = self.niri.global_space.output_geometry(output).unwrap();
                         Point::from((geo.loc.x as f64 + x, geo.loc.y as f64 + y))
                     } else {
@@ -2673,11 +2678,11 @@ impl State {
                         return;
                     }
                 };
-                
+
                 // Get the contents under the new location to handle focus-follows-mouse
                 let under = self.niri.contents_under(location);
                 self.niri.handle_focus_follows_mouse(&under);
-                
+
                 self.move_cursor(location);
             }
             Action::LoadConfigFile(path) => {
@@ -3033,7 +3038,7 @@ impl State {
             } else {
                 (location.x, location.y, String::from("unknown"))
             };
-            
+
             let pointer_pos = niri_ipc::PointerPosition {
                 x,
                 y,
@@ -3146,7 +3151,7 @@ impl State {
             } else {
                 (location.x, location.y, String::from("unknown"))
             };
-            
+
             let pointer_pos = niri_ipc::PointerPosition {
                 x,
                 y,

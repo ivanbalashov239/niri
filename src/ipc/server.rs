@@ -332,7 +332,8 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
                 ctx.event_loop.insert_idle(move |state| {
                     let pointer = state.niri.seat.get_pointer().unwrap();
                     let location = pointer.current_location();
-                    let (x, y, output_name) = if let Some(output) = state.niri.output_under_cursor() {
+                    let (x, y, output_name) = if let Some(output) = state.niri.output_under_cursor()
+                    {
                         let geo = state.niri.global_space.output_geometry(&output).unwrap();
                         (
                             location.x - geo.loc.x as f64,
@@ -342,13 +343,13 @@ async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> an
                     } else {
                         (location.x, location.y, String::from("unknown"))
                     };
-                    
+
                     let pointer_pos = niri_ipc::PointerPosition {
                         x,
                         y,
                         output: output_name,
                     };
-                    
+
                     let _ = tx.send_blocking(pointer_pos);
                 });
                 let pointer_pos = rx.recv().await.expect("initial pointer position");
@@ -565,13 +566,13 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 } else {
                     (location.x, location.y, String::from("unknown"))
                 };
-                
+
                 let pointer_pos = PointerPosition {
                     x,
                     y,
                     output: output_name,
                 };
-                
+
                 let _ = tx.send_blocking(pointer_pos);
             });
             let result = rx.recv().await;

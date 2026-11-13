@@ -347,7 +347,10 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                 return Ok(());
             }
 
-            println!("Pointer position: x={}, y={}, output={}", pos.x, pos.y, pos.output);
+            println!(
+                "Pointer position: x={}, y={}, output={}",
+                pos.x, pos.y, pos.output
+            );
         }
         Msg::Action { .. } => {
             let Response::Handled = response else {
@@ -558,14 +561,18 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                 let event = read_event().context("error reading pointer event from niri")?;
 
                 if json {
-                    let event = serde_json::to_string(&event).context("error formatting pointer event")?;
+                    let event =
+                        serde_json::to_string(&event).context("error formatting pointer event")?;
                     println!("{event}");
                     continue;
                 }
 
                 match event {
                     PointerEvent::Position(pos) => {
-                        println!("Pointer position: x={:.1}, y={:.1}, output={}", pos.x, pos.y, pos.output);
+                        println!(
+                            "Pointer position: x={:.1}, y={:.1}, output={}",
+                            pos.x, pos.y, pos.output
+                        );
                     }
                     PointerEvent::Button { button, pressed } => {
                         println!("Pointer button: button={}, pressed={}", button, pressed);
